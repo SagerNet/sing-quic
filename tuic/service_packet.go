@@ -6,7 +6,7 @@ import (
 	M "github.com/sagernet/sing/common/metadata"
 )
 
-func (s *serverSession) loopMessages() {
+func (s *serverSession[U]) loopMessages() {
 	select {
 	case <-s.connDone:
 		return
@@ -26,7 +26,7 @@ func (s *serverSession) loopMessages() {
 	}
 }
 
-func (s *serverSession) handleMessage(data []byte) error {
+func (s *serverSession[U]) handleMessage(data []byte) error {
 	if len(data) < 2 {
 		return E.New("invalid message")
 	}
@@ -50,7 +50,7 @@ func (s *serverSession) handleMessage(data []byte) error {
 	}
 }
 
-func (s *serverSession) handleUDPMessage(message *udpMessage, udpStream bool) {
+func (s *serverSession[U]) handleUDPMessage(message *udpMessage, udpStream bool) {
 	s.udpAccess.RLock()
 	udpConn, loaded := s.udpConnMap[message.sessionID]
 	s.udpAccess.RUnlock()

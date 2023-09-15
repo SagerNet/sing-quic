@@ -6,7 +6,7 @@ import (
 	M "github.com/sagernet/sing/common/metadata"
 )
 
-func (s *serverSession) loopMessages() {
+func (s *serverSession[U]) loopMessages() {
 	for {
 		message, err := s.quicConn.ReceiveMessage(s.ctx)
 		if err != nil {
@@ -21,7 +21,7 @@ func (s *serverSession) loopMessages() {
 	}
 }
 
-func (s *serverSession) handleMessage(data []byte) error {
+func (s *serverSession[U]) handleMessage(data []byte) error {
 	message := allocMessage()
 	err := decodeUDPMessage(message, data)
 	if err != nil {
@@ -32,7 +32,7 @@ func (s *serverSession) handleMessage(data []byte) error {
 	return nil
 }
 
-func (s *serverSession) handleUDPMessage(message *udpMessage) {
+func (s *serverSession[U]) handleUDPMessage(message *udpMessage) {
 	s.udpAccess.RLock()
 	udpConn, loaded := s.udpConnMap[message.sessionID]
 	s.udpAccess.RUnlock()

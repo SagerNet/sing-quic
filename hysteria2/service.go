@@ -26,7 +26,7 @@ import (
 	aTLS "github.com/sagernet/sing/common/tls"
 )
 
-type ServerOptions struct {
+type ServiceOptions struct {
 	Context               context.Context
 	Logger                logger.Logger
 	SendBPS               uint64
@@ -34,15 +34,9 @@ type ServerOptions struct {
 	IgnoreClientBandwidth bool
 	SalamanderPassword    string
 	TLSConfig             aTLS.ServerConfig
-	Users                 []User
 	UDPDisabled           bool
 	Handler               ServerHandler
 	MasqueradeHandler     http.Handler
-}
-
-type User struct {
-	Name     string
-	Password string
 }
 
 type ServerHandler interface {
@@ -50,7 +44,7 @@ type ServerHandler interface {
 	N.UDPConnectionHandler
 }
 
-type Server struct {
+type Service[U comparable] struct {
 	ctx                   context.Context
 	logger                logger.Logger
 	sendBPS               uint64
@@ -59,14 +53,14 @@ type Server struct {
 	salamanderPassword    string
 	tlsConfig             aTLS.ServerConfig
 	quicConfig            *quic.Config
-	userMap               map[string]User
+	userMap               map[string]U
 	udpDisabled           bool
 	handler               ServerHandler
 	masqueradeHandler     http.Handler
 	quicListener          io.Closer
 }
 
-func NewServer(options ServerOptions) (*Server, error) {
+func NewService[U comparable](options ServiceOptions) (*Service[U], error) {
 	quicConfig := &quic.Config{
 		DisablePathMTUDiscovery:        !(runtime.GOOS == "windows" || runtime.GOOS == "linux" || runtime.GOOS == "android" || runtime.GOOS == "darwin"),
 		EnableDatagrams:                !options.UDPDisabled,
@@ -78,17 +72,10 @@ func NewServer(options ServerOptions) (*Server, error) {
 		MaxIdleTimeout:                 defaultMaxIdleTimeout,
 		KeepAlivePeriod:                defaultKeepAlivePeriod,
 	}
-	if len(options.Users) == 0 {
-		return nil, E.New("missing users")
-	}
-	userMap := make(map[string]User)
-	for _, user := range options.Users {
-		userMap[user.Password] = user
-	}
 	if options.MasqueradeHandler == nil {
 		options.MasqueradeHandler = http.NotFoundHandler()
 	}
-	return &Server{
+	return &Service[U]{
 		ctx:                   options.Context,
 		logger:                options.Logger,
 		sendBPS:               options.SendBPS,
@@ -97,14 +84,22 @@ func NewServer(options ServerOptions) (*Server, error) {
 		salamanderPassword:    options.SalamanderPassword,
 		tlsConfig:             options.TLSConfig,
 		quicConfig:            quicConfig,
-		userMap:               userMap,
+		userMap:               make(map[string]U),
 		udpDisabled:           options.UDPDisabled,
 		handler:               options.Handler,
 		masqueradeHandler:     options.MasqueradeHandler,
 	}, nil
 }
 
-func (s *Server) Start(conn net.PacketConn) error {
+func (s *Service[U]) UpdateUsers(userList []U, passwordList []string) {
+	userMap := make(map[string]U)
+	for i, user := range userList {
+		userMap[passwordList[i]] = user
+	}
+	s.userMap = userMap
+}
+
+func (s *Service[U]) Start(conn net.PacketConn) error {
 	if s.salamanderPassword != "" {
 		conn = NewSalamanderConn(conn, []byte(s.salamanderPassword))
 	}
@@ -121,13 +116,13 @@ func (s *Server) Start(conn net.PacketConn) error {
 	return nil
 }
 
-func (s *Server) Close() error {
+func (s *Service[U]) Close() error {
 	return common.Close(
 		s.quicListener,
 	)
 }
 
-func (s *Server) loopConnections(listener qtls.Listener) {
+func (s *Service[U]) loopConnections(listener qtls.Listener) {
 	for {
 		connection, err := listener.Accept(s.ctx)
 		if err != nil {
@@ -142,9 +137,9 @@ func (s *Server) loopConnections(listener qtls.Listener) {
 	}
 }
 
-func (s *Server) handleConnection(connection quic.Connection) {
-	session := &serverSession{
-		Server:     s,
+func (s *Service[U]) handleConnection(connection quic.Connection) {
+	session := &serverSession[U]{
+		Service:    s,
 		ctx:        s.ctx,
 		quicConn:   connection,
 		source:     M.SocksaddrFromNet(connection.RemoteAddr()),
@@ -159,8 +154,8 @@ func (s *Server) handleConnection(connection quic.Connection) {
 	_ = connection.CloseWithError(0, "")
 }
 
-type serverSession struct {
-	*Server
+type serverSession[U comparable] struct {
+	*Service[U]
 	ctx           context.Context
 	quicConn      quic.Connection
 	source        M.Socksaddr
@@ -168,12 +163,12 @@ type serverSession struct {
 	connDone      chan struct{}
 	connErr       error
 	authenticated bool
-	authUser      *User
+	authUser      U
 	udpAccess     sync.RWMutex
 	udpConnMap    map[uint32]*udpPacketConn
 }
 
-func (s *serverSession) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (s *serverSession[U]) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodPost && r.Host == protocol.URLHost && r.URL.Path == protocol.URLPath {
 		if s.authenticated {
 			protocol.AuthResponseToHeader(w.Header(), protocol.AuthResponse{
@@ -190,7 +185,7 @@ func (s *serverSession) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			s.masqueradeHandler.ServeHTTP(w, r)
 			return
 		}
-		s.authUser = &user
+		s.authUser = user
 		s.authenticated = true
 		if !s.ignoreClientBandwidth && request.Rx > 0 {
 			var sendBps uint64
@@ -231,7 +226,7 @@ func (s *serverSession) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (s *serverSession) handleStream0(frameType http3.FrameType, connection quic.Connection, stream quic.Stream, err error) (bool, error) {
+func (s *serverSession[U]) handleStream0(frameType http3.FrameType, connection quic.Connection, stream quic.Stream, err error) (bool, error) {
 	if !s.authenticated || err != nil {
 		return false, nil
 	}
@@ -251,15 +246,12 @@ func (s *serverSession) handleStream0(frameType http3.FrameType, connection quic
 	return true, nil
 }
 
-func (s *serverSession) handleStream(stream quic.Stream) error {
+func (s *serverSession[U]) handleStream(stream quic.Stream) error {
 	destinationString, err := protocol.ReadTCPRequest(stream)
 	if err != nil {
 		return E.New("read TCP request")
 	}
-	ctx := s.ctx
-	if s.authUser.Name != "" {
-		ctx = auth.ContextWithUser(s.ctx, s.authUser.Name)
-	}
+	ctx := auth.ContextWithUser(s.ctx, s.authUser)
 	_ = s.handler.NewConnection(ctx, &serverConn{Stream: stream}, M.Metadata{
 		Source:      s.source,
 		Destination: M.ParseSocksaddr(destinationString),
@@ -267,7 +259,7 @@ func (s *serverSession) handleStream(stream quic.Stream) error {
 	return nil
 }
 
-func (s *serverSession) closeWithError(err error) {
+func (s *serverSession[U]) closeWithError(err error) {
 	s.connAccess.Lock()
 	defer s.connAccess.Unlock()
 	select {
