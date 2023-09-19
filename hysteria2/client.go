@@ -150,8 +150,10 @@ func (c *Client) offerNew(ctx context.Context) (*clientQUICConnection, error) {
 		actualTx = c.sendBPS
 	}
 	if !authResponse.RxAuto && actualTx > 0 {
+		println("client using brutal")
 		quicConn.SetCongestionControl(hyCC.NewBrutalSender(actualTx))
 	} else {
+		println("client using bbr")
 		quicConn.SetCongestionControl(congestion.NewBBRSender(
 			congestion.DefaultClock{},
 			congestion.GetInitialPacketSize(quicConn.RemoteAddr()),

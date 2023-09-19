@@ -20,6 +20,7 @@ import (
 	"github.com/sagernet/sing/common/auth"
 	"github.com/sagernet/sing/common/baderror"
 	E "github.com/sagernet/sing/common/exceptions"
+	"github.com/sagernet/sing/common/format"
 	"github.com/sagernet/sing/common/logger"
 	M "github.com/sagernet/sing/common/metadata"
 	N "github.com/sagernet/sing/common/network"
@@ -194,8 +195,11 @@ func (s *serverSession[U]) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			} else {
 				sendBps = request.Rx
 			}
+			println("server using brutal")
+			format.ToString(1024 * 1024)
 			s.quicConn.SetCongestionControl(hyCC.NewBrutalSender(sendBps))
 		} else {
+			println("client using bbr")
 			s.quicConn.SetCongestionControl(congestion.NewBBRSender(
 				congestion.DefaultClock{},
 				congestion.GetInitialPacketSize(s.quicConn.RemoteAddr()),
