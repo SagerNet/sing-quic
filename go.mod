@@ -4,7 +4,7 @@ go 1.20
 
 require (
 	github.com/sagernet/quic-go v0.0.0-20230919101909-0cc6c5dcecee
-	github.com/sagernet/sing v0.2.10-0.20230912050851-1453c7c8c20d
+	github.com/sagernet/sing v0.2.11
 	golang.org/x/crypto v0.13.0
 	golang.org/x/exp v0.0.0-20230905200255-921286631fa9
 )
