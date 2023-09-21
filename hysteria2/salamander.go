@@ -6,7 +6,6 @@ import (
 	"github.com/sagernet/sing/common"
 	"github.com/sagernet/sing/common/buf"
 	"github.com/sagernet/sing/common/bufio"
-	E "github.com/sagernet/sing/common/exceptions"
 	M "github.com/sagernet/sing/common/metadata"
 	N "github.com/sagernet/sing/common/network"
 
@@ -46,7 +45,7 @@ func (s *Salamander) ReadFrom(p []byte) (n int, addr net.Addr, err error) {
 		return
 	}
 	if n <= salamanderSaltLen {
-		return 0, nil, E.New("salamander: packet too short")
+		return
 	}
 	key := blake2b.Sum256(append(s.password, p[:salamanderSaltLen]...))
 	for index, c := range p[salamanderSaltLen:n] {
