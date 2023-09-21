@@ -202,7 +202,7 @@ func (c *Client) ListenPacket(ctx context.Context) (net.PacketConn, error) {
 		return nil, E.New("UDP disabled by server")
 	}
 	var sessionID uint32
-	clientPacketConn := newUDPPacketConn(ctx, conn.quicConn, func() {
+	clientPacketConn := newUDPPacketConn(c.ctx, conn.quicConn, func() {
 		conn.udpAccess.Lock()
 		delete(conn.udpConnMap, sessionID)
 		conn.udpAccess.Unlock()
