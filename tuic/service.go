@@ -113,7 +113,7 @@ func (s *Service[U]) Start(conn net.PacketConn) error {
 			for {
 				connection, hErr := listener.Accept(s.ctx)
 				if hErr != nil {
-					if strings.Contains(hErr.Error(), "server closed") {
+					if E.IsClosedOrCanceled(hErr) {
 						s.logger.Debug(E.Cause(hErr, "listener closed"))
 					} else {
 						s.logger.Error(E.Cause(hErr, "listener closed"))

@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"os"
 	"runtime"
-	"strings"
 	"sync"
 
 	"github.com/sagernet/quic-go"
@@ -127,7 +126,7 @@ func (s *Service[U]) loopConnections(listener qtls.Listener) {
 	for {
 		connection, err := listener.Accept(s.ctx)
 		if err != nil {
-			if strings.Contains(err.Error(), "server closed") {
+			if E.IsClosedOrCanceled(err) {
 				s.logger.Debug(E.Cause(err, "listener closed"))
 			} else {
 				s.logger.Error(E.Cause(err, "listener closed"))
