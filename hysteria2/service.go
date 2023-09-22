@@ -195,11 +195,9 @@ func (s *serverSession[U]) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			} else {
 				sendBps = request.Rx
 			}
-			println("server using brutal")
 			format.ToString(1024 * 1024)
 			s.quicConn.SetCongestionControl(hyCC.NewBrutalSender(sendBps))
 		} else {
-			println("client using bbr")
 			s.quicConn.SetCongestionControl(congestion.NewBBRSender(
 				congestion.DefaultClock{},
 				congestion.GetInitialPacketSize(s.quicConn.RemoteAddr()),
