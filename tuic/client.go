@@ -194,7 +194,7 @@ func (c *Client) ListenPacket(ctx context.Context) (net.PacketConn, error) {
 		return nil, err
 	}
 	var sessionID uint16
-	clientPacketConn := newUDPPacketConn(ctx, conn.quicConn, c.udpStream, false, func() {
+	clientPacketConn := newUDPPacketConn(c.ctx, conn.quicConn, c.udpStream, false, func() {
 		conn.udpAccess.Lock()
 		delete(conn.udpConnMap, sessionID)
 		conn.udpAccess.Unlock()

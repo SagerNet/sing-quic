@@ -36,7 +36,7 @@ func allocMessage() *udpMessage {
 func releaseMessages(messages []*udpMessage) {
 	for _, message := range messages {
 		if message != nil {
-			message.release()
+			message.releaseMessage()
 		}
 	}
 }
