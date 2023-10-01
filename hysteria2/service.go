@@ -8,11 +8,14 @@ import (
 	"os"
 	"runtime"
 	"sync"
+	"time"
 
 	"github.com/sagernet/quic-go"
+	"github.com/sagernet/quic-go/congestion"
 	"github.com/sagernet/quic-go/http3"
 	"github.com/sagernet/sing-quic"
-	"github.com/sagernet/sing-quic/congestion"
+	congestion_meta1 "github.com/sagernet/sing-quic/congestion_meta1"
+	congestion_meta2 "github.com/sagernet/sing-quic/congestion_meta2"
 	hyCC "github.com/sagernet/sing-quic/hysteria2/congestion"
 	"github.com/sagernet/sing-quic/hysteria2/internal/protocol"
 	"github.com/sagernet/sing/common"
@@ -23,6 +26,7 @@ import (
 	"github.com/sagernet/sing/common/logger"
 	M "github.com/sagernet/sing/common/metadata"
 	N "github.com/sagernet/sing/common/network"
+	"github.com/sagernet/sing/common/ntp"
 	aTLS "github.com/sagernet/sing/common/tls"
 )
 
@@ -197,11 +201,14 @@ func (s *serverSession[U]) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			format.ToString(1024 * 1024)
 			s.quicConn.SetCongestionControl(hyCC.NewBrutalSender(sendBps))
 		} else {
-			s.quicConn.SetCongestionControl(congestion.NewBBRSender(
-				congestion.DefaultClock{},
-				congestion.GetInitialPacketSize(s.quicConn.RemoteAddr()),
-				congestion.InitialCongestionWindow*congestion.InitialMaxDatagramSize,
-				congestion.DefaultBBRMaxCongestionWindow*congestion.InitialMaxDatagramSize,
+			timeFunc := ntp.TimeFuncFromContext(s.ctx)
+			if timeFunc == nil {
+				timeFunc = time.Now
+			}
+			s.quicConn.SetCongestionControl(congestion_meta2.NewBbrSender(
+				congestion_meta2.DefaultClock{TimeFunc: timeFunc},
+				congestion_meta2.GetInitialPacketSize(s.quicConn.RemoteAddr()),
+				congestion.ByteCount(congestion_meta1.InitialCongestionWindow),
 			))
 		}
 		protocol.AuthResponseToHeader(w.Header(), protocol.AuthResponse{

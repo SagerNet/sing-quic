@@ -58,7 +58,7 @@ type cubicSender struct {
 	maxDatagramSize congestion.ByteCount
 
 	lastState logging.CongestionState
-	tracer    logging.ConnectionTracer
+	tracer    *logging.ConnectionTracer
 }
 
 var _ congestion.CongestionControl = &cubicSender{}
@@ -68,7 +68,7 @@ func NewCubicSender(
 	clock Clock,
 	initialMaxDatagramSize congestion.ByteCount,
 	reno bool,
-	tracer logging.ConnectionTracer,
+	tracer *logging.ConnectionTracer,
 ) *cubicSender {
 	return newCubicSender(
 		clock,
@@ -86,7 +86,7 @@ func newCubicSender(
 	initialMaxDatagramSize,
 	initialCongestionWindow,
 	initialMaxCongestionWindow congestion.ByteCount,
-	tracer logging.ConnectionTracer,
+	tracer *logging.ConnectionTracer,
 ) *cubicSender {
 	c := &cubicSender{
 		largestSentPacketNumber:    InvalidPacketNumber,

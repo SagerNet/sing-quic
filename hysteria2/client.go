@@ -12,8 +12,10 @@ import (
 	"time"
 
 	"github.com/sagernet/quic-go"
+	"github.com/sagernet/quic-go/congestion"
 	"github.com/sagernet/sing-quic"
-	"github.com/sagernet/sing-quic/congestion"
+	congestion_meta1 "github.com/sagernet/sing-quic/congestion_meta1"
+	congestion_meta2 "github.com/sagernet/sing-quic/congestion_meta2"
 	hyCC "github.com/sagernet/sing-quic/hysteria2/congestion"
 	"github.com/sagernet/sing-quic/hysteria2/internal/protocol"
 	"github.com/sagernet/sing/common/baderror"
@@ -21,6 +23,7 @@ import (
 	E "github.com/sagernet/sing/common/exceptions"
 	M "github.com/sagernet/sing/common/metadata"
 	N "github.com/sagernet/sing/common/network"
+	"github.com/sagernet/sing/common/ntp"
 	aTLS "github.com/sagernet/sing/common/tls"
 )
 
@@ -152,11 +155,14 @@ func (c *Client) offerNew(ctx context.Context) (*clientQUICConnection, error) {
 	if !authResponse.RxAuto && actualTx > 0 {
 		quicConn.SetCongestionControl(hyCC.NewBrutalSender(actualTx))
 	} else {
-		quicConn.SetCongestionControl(congestion.NewBBRSender(
-			congestion.DefaultClock{},
-			congestion.GetInitialPacketSize(quicConn.RemoteAddr()),
-			congestion.InitialCongestionWindow*congestion.InitialMaxDatagramSize,
-			congestion.DefaultBBRMaxCongestionWindow*congestion.InitialMaxDatagramSize,
+		timeFunc := ntp.TimeFuncFromContext(c.ctx)
+		if timeFunc == nil {
+			timeFunc = time.Now
+		}
+		quicConn.SetCongestionControl(congestion_meta2.NewBbrSender(
+			congestion_meta2.DefaultClock{TimeFunc: timeFunc},
+			congestion_meta2.GetInitialPacketSize(quicConn.RemoteAddr()),
+			congestion.ByteCount(congestion_meta1.InitialCongestionWindow),
 		))
 	}
 	conn := &clientQUICConnection{
