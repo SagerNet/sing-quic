@@ -4,9 +4,9 @@ go 1.20
 
 require (
 	github.com/sagernet/quic-go v0.0.0-20230919101909-0cc6c5dcecee
-	github.com/sagernet/sing v0.2.12
-	golang.org/x/crypto v0.13.0
-	golang.org/x/exp v0.0.0-20230905200255-921286631fa9
+	github.com/sagernet/sing v0.2.13
+	golang.org/x/crypto v0.14.0
+	golang.org/x/exp v0.0.0-20231005195138-3e424a577f31
 )
 
 require (
@@ -17,7 +17,7 @@ require (
 	github.com/quic-go/qtls-go1-20 v0.3.4 // indirect
 	github.com/stretchr/testify v1.8.4 // indirect
 	golang.org/x/net v0.15.0 // indirect
-	golang.org/x/sys v0.12.0 // indirect
+	golang.org/x/sys v0.13.0 // indirect
 	golang.org/x/text v0.13.0 // indirect
 	golang.org/x/tools v0.13.0 // indirect
 	google.golang.org/protobuf v1.31.0 // indirect
