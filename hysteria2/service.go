@@ -33,6 +33,7 @@ import (
 type ServiceOptions struct {
 	Context               context.Context
 	Logger                logger.Logger
+	BrutalDebug           bool
 	SendBPS               uint64
 	ReceiveBPS            uint64
 	IgnoreClientBandwidth bool
@@ -51,6 +52,7 @@ type ServerHandler interface {
 type Service[U comparable] struct {
 	ctx                   context.Context
 	logger                logger.Logger
+	brutalDebug           bool
 	sendBPS               uint64
 	receiveBPS            uint64
 	ignoreClientBandwidth bool
@@ -82,6 +84,7 @@ func NewService[U comparable](options ServiceOptions) (*Service[U], error) {
 	return &Service[U]{
 		ctx:                   options.Context,
 		logger:                options.Logger,
+		brutalDebug:           options.BrutalDebug,
 		sendBPS:               options.SendBPS,
 		receiveBPS:            options.ReceiveBPS,
 		ignoreClientBandwidth: options.IgnoreClientBandwidth,
@@ -199,7 +202,7 @@ func (s *serverSession[U]) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				sendBps = request.Rx
 			}
 			format.ToString(1024 * 1024)
-			s.quicConn.SetCongestionControl(hyCC.NewBrutalSender(sendBps))
+			s.quicConn.SetCongestionControl(hyCC.NewBrutalSender(sendBps, s.brutalDebug, s.logger))
 		} else {
 			timeFunc := ntp.TimeFuncFromContext(s.ctx)
 			if timeFunc == nil {

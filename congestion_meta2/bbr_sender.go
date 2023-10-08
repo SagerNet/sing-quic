@@ -21,6 +21,8 @@ import (
 //
 
 const (
+	minBps = 65536 // 64 kbps
+
 	invalidPacketNumber            = -1
 	initialCongestionWindowPackets = 32
 
@@ -284,10 +286,7 @@ func newBbrSender(
 		maxCongestionWindowWithNetworkParametersAdjusted: initialMaxCongestionWindow,
 		maxDatagramSize: initialMaxDatagramSize,
 	}
-	b.pacer = NewPacer(func() congestion.ByteCount {
-		// Pacer wants bytes per second, but Bandwidth is in bits per second.
-		return congestion.ByteCount(float64(b.bandwidthEstimate()) * b.congestionWindowGain / float64(BytesPerSecond))
-	})
+	b.pacer = NewPacer(b.bandwidthForPacer)
 
 	/*
 		if b.tracer != nil {
@@ -484,10 +483,19 @@ func (b *bbrSender) OnCongestionEventEx(priorInFlight congestion.ByteCount, even
 	b.calculateRecoveryWindow(bytesAcked, bytesLost)
 
 	// Cleanup internal state.
-	if len(lostPackets) != 0 {
-		lastLostPacket := lostPackets[len(lostPackets)-1].PacketNumber
-		b.sampler.RemoveObsoletePackets(lastLostPacket)
+	// This is where we clean up obsolete (acked or lost) packets from the bandwidth sampler.
+	// The "least unacked" should actually be FirstOutstanding, but since we are not passing
+	// that through OnCongestionEventEx, we will only do an estimate using acked/lost packets
+	// for now. Because of fast retransmission, they should differ by no more than 2 packets.
+	// (this is controlled by packetThreshold in quic-go's sentPacketHandler)
+	var leastUnacked congestion.PacketNumber
+	if len(ackedPackets) != 0 {
+		leastUnacked = ackedPackets[len(ackedPackets)-1].PacketNumber - 2
+	} else {
+		leastUnacked = lostPackets[len(lostPackets)-1].PacketNumber + 1
 	}
+	b.sampler.RemoveObsoletePackets(leastUnacked)
+
 	if isRoundStart {
 		b.numLossEventsInRound = 0
 		b.bytesLostInRound = 0
@@ -535,6 +543,17 @@ func (b *bbrSender) setDrainGain(drainGain float64) {
 // What's the current estimated bandwidth in bytes per second.
 func (b *bbrSender) bandwidthEstimate() Bandwidth {
 	return b.maxBandwidth.GetBest()
+}
+
+func (b *bbrSender) bandwidthForPacer() congestion.ByteCount {
+	bps := congestion.ByteCount(float64(b.bandwidthEstimate()) * b.congestionWindowGain / float64(BytesPerSecond))
+	if bps < minBps {
+		// We need to make sure that the bandwidth value for pacer is never zero,
+		// otherwise it will go into an edge case where HasPacingBudget = false
+		// but TimeUntilSend is before, causing the quic-go send loop to go crazy and get stuck.
+		return minBps
+	}
+	return bps
 }
 
 // Returns the current estimate of the RTT of the connection.  Outside of the
