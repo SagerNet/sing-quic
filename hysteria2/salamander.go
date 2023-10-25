@@ -16,7 +16,7 @@ const salamanderSaltLen = 8
 
 const ObfsTypeSalamander = "salamander"
 
-type Salamander struct {
+type SalamanderPacketConn struct {
 	net.PacketConn
 	password []byte
 }
@@ -24,22 +24,22 @@ type Salamander struct {
 func NewSalamanderConn(conn net.PacketConn, password []byte) net.PacketConn {
 	writer, isVectorised := bufio.CreateVectorisedPacketWriter(conn)
 	if isVectorised {
-		return &VectorisedSalamander{
-			Salamander: Salamander{
+		return &VectorisedSalamanderPacketConn{
+			SalamanderPacketConn: SalamanderPacketConn{
 				PacketConn: conn,
 				password:   password,
 			},
 			writer: writer,
 		}
 	} else {
-		return &Salamander{
+		return &SalamanderPacketConn{
 			PacketConn: conn,
 			password:   password,
 		}
 	}
 }
 
-func (s *Salamander) ReadFrom(p []byte) (n int, addr net.Addr, err error) {
+func (s *SalamanderPacketConn) ReadFrom(p []byte) (n int, addr net.Addr, err error) {
 	n, addr, err = s.PacketConn.ReadFrom(p)
 	if err != nil {
 		return
@@ -54,7 +54,7 @@ func (s *Salamander) ReadFrom(p []byte) (n int, addr net.Addr, err error) {
 	return n - salamanderSaltLen, addr, nil
 }
 
-func (s *Salamander) WriteTo(p []byte, addr net.Addr) (n int, err error) {
+func (s *SalamanderPacketConn) WriteTo(p []byte, addr net.Addr) (n int, err error) {
 	buffer := buf.NewSize(len(p) + salamanderSaltLen)
 	defer buffer.Release()
 	buffer.WriteRandom(salamanderSaltLen)
@@ -69,12 +69,12 @@ func (s *Salamander) WriteTo(p []byte, addr net.Addr) (n int, err error) {
 	return len(p), nil
 }
 
-type VectorisedSalamander struct {
-	Salamander
+type VectorisedSalamanderPacketConn struct {
+	SalamanderPacketConn
 	writer N.VectorisedPacketWriter
 }
 
-func (s *VectorisedSalamander) WriteTo(p []byte, addr net.Addr) (n int, err error) {
+func (s *VectorisedSalamanderPacketConn) WriteTo(p []byte, addr net.Addr) (n int, err error) {
 	buffer := buf.NewSize(salamanderSaltLen)
 	buffer.WriteRandom(salamanderSaltLen)
 	key := blake2b.Sum256(append(s.password, buffer.Bytes()...))
@@ -88,7 +88,7 @@ func (s *VectorisedSalamander) WriteTo(p []byte, addr net.Addr) (n int, err erro
 	return len(p), nil
 }
 
-func (s *VectorisedSalamander) WriteVectorisedPacket(buffers []*buf.Buffer, destination M.Socksaddr) error {
+func (s *VectorisedSalamanderPacketConn) WriteVectorisedPacket(buffers []*buf.Buffer, destination M.Socksaddr) error {
 	header := buf.NewSize(salamanderSaltLen)
 	defer header.Release()
 	header.WriteRandom(salamanderSaltLen)

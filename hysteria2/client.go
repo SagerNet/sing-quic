@@ -16,7 +16,8 @@ import (
 	"github.com/sagernet/sing-quic"
 	congestion_meta1 "github.com/sagernet/sing-quic/congestion_meta1"
 	congestion_meta2 "github.com/sagernet/sing-quic/congestion_meta2"
-	hyCC "github.com/sagernet/sing-quic/hysteria2/congestion"
+	"github.com/sagernet/sing-quic/hysteria"
+	hyCC "github.com/sagernet/sing-quic/hysteria/congestion"
 	"github.com/sagernet/sing-quic/hysteria2/internal/protocol"
 	"github.com/sagernet/sing/common/baderror"
 	"github.com/sagernet/sing/common/bufio"
@@ -26,13 +27,6 @@ import (
 	N "github.com/sagernet/sing/common/network"
 	"github.com/sagernet/sing/common/ntp"
 	aTLS "github.com/sagernet/sing/common/tls"
-)
-
-const (
-	defaultStreamReceiveWindow = 8388608                            // 8MB
-	defaultConnReceiveWindow   = defaultStreamReceiveWindow * 5 / 2 // 20MB
-	defaultMaxIdleTimeout      = 30 * time.Second
-	defaultKeepAlivePeriod     = 10 * time.Second
 )
 
 type ClientOptions struct {
@@ -70,13 +64,13 @@ type Client struct {
 func NewClient(options ClientOptions) (*Client, error) {
 	quicConfig := &quic.Config{
 		DisablePathMTUDiscovery:        !(runtime.GOOS == "windows" || runtime.GOOS == "linux" || runtime.GOOS == "android" || runtime.GOOS == "darwin"),
-		EnableDatagrams:                true,
-		InitialStreamReceiveWindow:     defaultStreamReceiveWindow,
-		MaxStreamReceiveWindow:         defaultStreamReceiveWindow,
-		InitialConnectionReceiveWindow: defaultConnReceiveWindow,
-		MaxConnectionReceiveWindow:     defaultConnReceiveWindow,
-		MaxIdleTimeout:                 defaultMaxIdleTimeout,
-		KeepAlivePeriod:                defaultKeepAlivePeriod,
+		EnableDatagrams:                !options.UDPDisabled,
+		InitialStreamReceiveWindow:     hysteria.DefaultStreamReceiveWindow,
+		MaxStreamReceiveWindow:         hysteria.DefaultStreamReceiveWindow,
+		InitialConnectionReceiveWindow: hysteria.DefaultConnReceiveWindow,
+		MaxConnectionReceiveWindow:     hysteria.DefaultConnReceiveWindow,
+		MaxIdleTimeout:                 hysteria.DefaultMaxIdleTimeout,
+		KeepAlivePeriod:                hysteria.DefaultKeepAlivePeriod,
 	}
 	return &Client{
 		ctx:                options.Context,
@@ -176,7 +170,7 @@ func (c *Client) offerNew(ctx context.Context) (*clientQUICConnection, error) {
 		quicConn:    quicConn,
 		rawConn:     udpConn,
 		connDone:    make(chan struct{}),
-		udpDisabled: c.udpDisabled || !authResponse.UDPEnabled,
+		udpDisabled: !authResponse.UDPEnabled,
 		udpConnMap:  make(map[uint32]*udpPacketConn),
 	}
 	if !c.udpDisabled {
