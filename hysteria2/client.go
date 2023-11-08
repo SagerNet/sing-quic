@@ -320,6 +320,8 @@ func (c *clientConn) RemoteAddr() net.Addr {
 }
 
 func (c *clientConn) Close() error {
-	c.Stream.CancelRead(0)
+	if !c.NeedHandshake() {
+		c.Stream.CancelRead(0)
+	}
 	return c.Stream.Close()
 }

@@ -290,7 +290,9 @@ func (c *clientConn) Write(b []byte) (n int, err error) {
 }
 
 func (c *clientConn) Close() error {
-	c.Stream.CancelRead(0)
+	if !c.NeedHandshake() {
+		c.Stream.CancelRead(0)
+	}
 	return c.Stream.Close()
 }
 
