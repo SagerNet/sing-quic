@@ -23,6 +23,8 @@ import (
 	M "github.com/sagernet/sing/common/metadata"
 	N "github.com/sagernet/sing/common/network"
 	aTLS "github.com/sagernet/sing/common/tls"
+
+	"github.com/gofrs/uuid/v5"
 )
 
 type ServiceOptions struct {
@@ -243,7 +245,7 @@ func (s *serverSession[U]) handleUniStream(stream quic.ReceiveStream) error {
 		copy(userUUID[:], buffer.Range(2, 2+16))
 		user, loaded := s.userMap[userUUID]
 		if !loaded {
-			return E.New("authentication: unknown user ", userUUID)
+			return E.New("authentication: unknown user ", uuid.UUID(userUUID))
 		}
 		handshakeState := s.quicConn.ConnectionState()
 		tuicToken, err := handshakeState.ExportKeyingMaterial(string(userUUID[:]), []byte(s.passwordMap[user]), 32)
