@@ -67,7 +67,6 @@ func NewService[U comparable](options ServiceOptions) (*Service[U], error) {
 	}
 	quicConfig := &quic.Config{
 		DisablePathMTUDiscovery: !(runtime.GOOS == "windows" || runtime.GOOS == "linux" || runtime.GOOS == "android" || runtime.GOOS == "darwin"),
-		MaxDatagramFrameSize:    1400,
 		EnableDatagrams:         true,
 		Allow0RTT:               options.ZeroRTTHandshake,
 		MaxIncomingStreams:      1 << 60,
@@ -376,7 +375,7 @@ func (s *serverSession[U]) loopHeartbeats() {
 		case <-s.connDone:
 			return
 		case <-ticker.C:
-			err := s.quicConn.SendMessage([]byte{Version, CommandHeartbeat})
+			err := s.quicConn.SendDatagram([]byte{Version, CommandHeartbeat})
 			if err != nil {
 				s.closeWithError(E.Cause(err, "send heartbeat"))
 			}

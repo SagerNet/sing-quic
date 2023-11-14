@@ -320,7 +320,7 @@ func (c *udpPacketConn) writePackets(messages []*udpMessage) error {
 func (c *udpPacketConn) writePacket(message *udpMessage) error {
 	buffer := message.pack()
 	defer buffer.Release()
-	return c.quicConn.SendMessage(buffer.Bytes())
+	return c.quicConn.SendDatagram(buffer.Bytes())
 }
 
 func (c *udpPacketConn) Close() error {

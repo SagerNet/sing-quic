@@ -4,7 +4,7 @@ import E "github.com/sagernet/sing/common/exceptions"
 
 func (c *Client) loopMessages(conn *clientQUICConnection) {
 	for {
-		message, err := conn.quicConn.ReceiveMessage(c.ctx)
+		message, err := conn.quicConn.ReceiveDatagram(c.ctx)
 		if err != nil {
 			conn.closeWithError(E.Cause(err, "receive message"))
 			return

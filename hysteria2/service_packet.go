@@ -9,7 +9,7 @@ import (
 
 func (s *serverSession[U]) loopMessages() {
 	for {
-		message, err := s.quicConn.ReceiveMessage(s.ctx)
+		message, err := s.quicConn.ReceiveDatagram(s.ctx)
 		if err != nil {
 			s.closeWithError(E.Cause(err, "receive message"))
 			return

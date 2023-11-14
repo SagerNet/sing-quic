@@ -56,7 +56,6 @@ func NewClient(options ClientOptions) (*Client, error) {
 	}
 	quicConfig := &quic.Config{
 		DisablePathMTUDiscovery: !(runtime.GOOS == "windows" || runtime.GOOS == "linux" || runtime.GOOS == "android" || runtime.GOOS == "darwin"),
-		MaxDatagramFrameSize:    1400,
 		EnableDatagrams:         true,
 		MaxIncomingUniStreams:   1 << 60,
 	}
@@ -164,7 +163,7 @@ func (c *Client) loopHeartbeats(conn *clientQUICConnection) {
 		case <-conn.connDone:
 			return
 		case <-ticker.C:
-			err := conn.quicConn.SendMessage([]byte{Version, CommandHeartbeat})
+			err := conn.quicConn.SendDatagram([]byte{Version, CommandHeartbeat})
 			if err != nil {
 				conn.closeWithError(E.Cause(err, "send heartbeat"))
 			}
