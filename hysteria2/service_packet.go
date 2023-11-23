@@ -2,6 +2,7 @@ package hysteria2
 
 import (
 	"github.com/sagernet/sing/common"
+	"github.com/sagernet/sing/common/auth"
 	E "github.com/sagernet/sing/common/exceptions"
 	M "github.com/sagernet/sing/common/metadata"
 )
@@ -37,7 +38,7 @@ func (s *serverSession[U]) handleUDPMessage(message *udpMessage) {
 	udpConn, loaded := s.udpConnMap[message.sessionID]
 	s.udpAccess.RUnlock()
 	if !loaded || common.Done(udpConn.ctx) {
-		udpConn = newUDPPacketConn(s.ctx, s.quicConn, func() {
+		udpConn = newUDPPacketConn(auth.ContextWithUser(s.ctx, s.authUser), s.quicConn, func() {
 			s.udpAccess.Lock()
 			delete(s.udpConnMap, message.sessionID)
 			s.udpAccess.Unlock()
