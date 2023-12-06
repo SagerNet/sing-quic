@@ -20,6 +20,7 @@ import (
 	"github.com/sagernet/sing/common/buf"
 	"github.com/sagernet/sing/common/cache"
 	M "github.com/sagernet/sing/common/metadata"
+	N "github.com/sagernet/sing/common/network"
 )
 
 var udpMessagePool = sync.Pool{
@@ -114,17 +115,18 @@ func fragUDPMessage(message *udpMessage, maxPacketSize int) []*udpMessage {
 }
 
 type udpPacketConn struct {
-	ctx        context.Context
-	cancel     common.ContextCancelCauseFunc
-	sessionID  uint32
-	quicConn   quic.Connection
-	data       chan *udpMessage
-	udpMTU     int
-	udpMTUTime time.Time
-	packetId   atomic.Uint32
-	closeOnce  sync.Once
-	defragger  *udpDefragger
-	onDestroy  func()
+	ctx             context.Context
+	cancel          common.ContextCancelCauseFunc
+	sessionID       uint32
+	quicConn        quic.Connection
+	data            chan *udpMessage
+	udpMTU          int
+	udpMTUTime      time.Time
+	packetId        atomic.Uint32
+	closeOnce       sync.Once
+	defragger       *udpDefragger
+	onDestroy       func()
+	readWaitOptions N.ReadWaitOptions
 }
 
 func newUDPPacketConn(ctx context.Context, quicConn quic.Connection, onDestroy func()) *udpPacketConn {
@@ -139,34 +141,10 @@ func newUDPPacketConn(ctx context.Context, quicConn quic.Connection, onDestroy f
 	}
 }
 
-func (c *udpPacketConn) ReadPacketThreadSafe() (buffer *buf.Buffer, destination M.Socksaddr, err error) {
-	select {
-	case p := <-c.data:
-		buffer = p.data
-		destination = M.ParseSocksaddr(p.destination)
-		p.release()
-		return
-	case <-c.ctx.Done():
-		return nil, M.Socksaddr{}, io.ErrClosedPipe
-	}
-}
-
 func (c *udpPacketConn) ReadPacket(buffer *buf.Buffer) (destination M.Socksaddr, err error) {
 	select {
 	case p := <-c.data:
 		_, err = buffer.ReadOnceFrom(p.data)
-		destination = M.ParseSocksaddr(p.destination)
-		p.releaseMessage()
-		return
-	case <-c.ctx.Done():
-		return M.Socksaddr{}, io.ErrClosedPipe
-	}
-}
-
-func (c *udpPacketConn) WaitReadPacket(newBuffer func() *buf.Buffer) (destination M.Socksaddr, err error) {
-	select {
-	case p := <-c.data:
-		_, err = newBuffer().ReadOnceFrom(p.data)
 		destination = M.ParseSocksaddr(p.destination)
 		p.releaseMessage()
 		return
