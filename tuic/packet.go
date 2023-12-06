@@ -19,6 +19,7 @@ import (
 	"github.com/sagernet/sing/common/cache"
 	E "github.com/sagernet/sing/common/exceptions"
 	M "github.com/sagernet/sing/common/metadata"
+	N "github.com/sagernet/sing/common/network"
 )
 
 var udpMessagePool = sync.Pool{
@@ -114,20 +115,26 @@ func fragUDPMessage(message *udpMessage, maxPacketSize int) []*udpMessage {
 	return fragments
 }
 
+var (
+	_ N.NetPacketConn    = (*udpPacketConn)(nil)
+	_ N.PacketReadWaiter = (*udpPacketConn)(nil)
+)
+
 type udpPacketConn struct {
-	ctx        context.Context
-	cancel     common.ContextCancelCauseFunc
-	sessionID  uint16
-	quicConn   quic.Connection
-	data       chan *udpMessage
-	udpStream  bool
-	udpMTU     int
-	udpMTUTime time.Time
-	packetId   atomic.Uint32
-	closeOnce  sync.Once
-	isServer   bool
-	defragger  *udpDefragger
-	onDestroy  func()
+	ctx             context.Context
+	cancel          common.ContextCancelCauseFunc
+	sessionID       uint16
+	quicConn        quic.Connection
+	data            chan *udpMessage
+	udpStream       bool
+	udpMTU          int
+	udpMTUTime      time.Time
+	packetId        atomic.Uint32
+	closeOnce       sync.Once
+	isServer        bool
+	defragger       *udpDefragger
+	onDestroy       func()
+	readWaitOptions N.ReadWaitOptions
 }
 
 func newUDPPacketConn(ctx context.Context, quicConn quic.Connection, udpStream bool, isServer bool, onDestroy func()) *udpPacketConn {
@@ -144,34 +151,10 @@ func newUDPPacketConn(ctx context.Context, quicConn quic.Connection, udpStream b
 	}
 }
 
-func (c *udpPacketConn) ReadPacketThreadSafe() (buffer *buf.Buffer, destination M.Socksaddr, err error) {
-	select {
-	case p := <-c.data:
-		buffer = p.data
-		destination = p.destination
-		p.release()
-		return
-	case <-c.ctx.Done():
-		return nil, M.Socksaddr{}, io.ErrClosedPipe
-	}
-}
-
 func (c *udpPacketConn) ReadPacket(buffer *buf.Buffer) (destination M.Socksaddr, err error) {
 	select {
 	case p := <-c.data:
 		_, err = buffer.ReadOnceFrom(p.data)
-		destination = p.destination
-		p.releaseMessage()
-		return
-	case <-c.ctx.Done():
-		return M.Socksaddr{}, io.ErrClosedPipe
-	}
-}
-
-func (c *udpPacketConn) WaitReadPacket(newBuffer func() *buf.Buffer) (destination M.Socksaddr, err error) {
-	select {
-	case p := <-c.data:
-		_, err = newBuffer().ReadOnceFrom(p.data)
 		destination = p.destination
 		p.releaseMessage()
 		return
