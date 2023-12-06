@@ -5,7 +5,7 @@ go 1.20
 require (
 	github.com/gofrs/uuid/v5 v5.0.0
 	github.com/sagernet/quic-go v0.40.0
-	github.com/sagernet/sing v0.2.20
+	github.com/sagernet/sing v0.3.0-rc.2
 	golang.org/x/crypto v0.17.0
 	golang.org/x/exp v0.0.0-20231219180239-dc181d75b848
 )
@@ -16,7 +16,6 @@ require (
 	github.com/onsi/ginkgo/v2 v2.9.7 // indirect
 	github.com/quic-go/qpack v0.4.0 // indirect
 	github.com/quic-go/qtls-go1-20 v0.4.1 // indirect
-	github.com/stretchr/testify v1.8.4 // indirect
 	golang.org/x/net v0.19.0 // indirect
 	golang.org/x/sys v0.15.0 // indirect
 	golang.org/x/text v0.14.0 // indirect
