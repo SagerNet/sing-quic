@@ -8,6 +8,7 @@ import (
 
 	"github.com/sagernet/quic-go"
 	"github.com/sagernet/quic-go/http3"
+	"github.com/sagernet/sing/common"
 	M "github.com/sagernet/sing/common/metadata"
 	aTLS "github.com/sagernet/sing/common/tls"
 )
@@ -104,8 +105,8 @@ func ListenEarly(conn net.PacketConn, config aTLS.ServerConfig, quicConfig *quic
 }
 
 func ConfigureHTTP3(config aTLS.ServerConfig) error {
-	if len(config.NextProtos()) == 0 {
-		config.SetNextProtos([]string{http3.NextProtoH3})
+	if !common.Contains(config.NextProtos(), http3.NextProtoH3) {
+		config.SetNextProtos(append([]string{http3.NextProtoH3}, config.NextProtos()...))
 	}
 	if quicTLSConfig, isQUICConfig := config.(ServerConfig); isQUICConfig {
 		quicTLSConfig.ConfigureHTTP3()
