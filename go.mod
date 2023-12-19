@@ -6,7 +6,7 @@ require (
 	github.com/gofrs/uuid/v5 v5.0.0
 	github.com/sagernet/quic-go v0.40.0
 	github.com/sagernet/sing v0.3.0-beta.3
-	golang.org/x/crypto v0.16.0
+	golang.org/x/crypto v0.17.0
 	golang.org/x/exp v0.0.0-20231214170342-aacd6d4b4611
 )
 
