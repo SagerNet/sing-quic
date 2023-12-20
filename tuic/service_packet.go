@@ -3,6 +3,7 @@ package tuic
 import (
 	"github.com/sagernet/sing/common"
 	"github.com/sagernet/sing/common/auth"
+	"github.com/sagernet/sing/common/canceler"
 	E "github.com/sagernet/sing/common/exceptions"
 	M "github.com/sagernet/sing/common/metadata"
 )
@@ -65,7 +66,8 @@ func (s *serverSession[U]) handleUDPMessage(message *udpMessage, udpStream bool)
 		s.udpAccess.Lock()
 		s.udpConnMap[message.sessionID] = udpConn
 		s.udpAccess.Unlock()
-		go s.handler.NewPacketConnection(udpConn.ctx, udpConn, M.Metadata{
+		newCtx, newConn := canceler.NewPacketConn(udpConn.ctx, udpConn, s.udpTimeout)
+		go s.handler.NewPacketConnection(newCtx, newConn, M.Metadata{
 			Source:      s.source,
 			Destination: message.destination,
 		})
