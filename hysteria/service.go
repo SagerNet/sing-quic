@@ -9,6 +9,7 @@ import (
 	"os"
 	"runtime"
 	"sync"
+	"time"
 
 	"github.com/sagernet/quic-go"
 	"github.com/sagernet/sing-quic"
@@ -16,6 +17,7 @@ import (
 	"github.com/sagernet/sing/common"
 	"github.com/sagernet/sing/common/auth"
 	"github.com/sagernet/sing/common/baderror"
+	"github.com/sagernet/sing/common/canceler"
 	E "github.com/sagernet/sing/common/exceptions"
 	"github.com/sagernet/sing/common/logger"
 	M "github.com/sagernet/sing/common/metadata"
@@ -32,6 +34,7 @@ type ServiceOptions struct {
 	XPlusPassword string
 	TLSConfig     aTLS.ServerConfig
 	UDPDisabled   bool
+	UDPTimeout    time.Duration
 	Handler       ServerHandler
 
 	// Legacy options
@@ -58,6 +61,7 @@ type Service[U comparable] struct {
 	quicConfig    *quic.Config
 	userMap       map[string]U
 	udpDisabled   bool
+	udpTimeout    time.Duration
 	handler       ServerHandler
 	quicListener  io.Closer
 }
@@ -109,6 +113,7 @@ func NewService[U comparable](options ServiceOptions) (*Service[U], error) {
 		userMap:       make(map[string]U),
 		handler:       options.Handler,
 		udpDisabled:   options.UDPDisabled,
+		udpTimeout:    options.UDPTimeout,
 	}, nil
 }
 
@@ -272,7 +277,8 @@ func (s *serverSession[U]) handleStream(stream quic.Stream) error {
 			udpConn.closeWithError(E.Cause(err, "write server response"))
 			return err
 		}
-		go s.handler.NewPacketConnection(udpConn.ctx, udpConn, M.Metadata{
+		newCtx, newConn := canceler.NewPacketConn(udpConn.ctx, udpConn, s.udpTimeout)
+		go s.handler.NewPacketConnection(newCtx, newConn, M.Metadata{
 			Source:      s.source,
 			Destination: M.ParseSocksaddrHostPort(request.Host, request.Port),
 		})

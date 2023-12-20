@@ -35,6 +35,7 @@ type ServiceOptions struct {
 	AuthTimeout       time.Duration
 	ZeroRTTHandshake  bool
 	Heartbeat         time.Duration
+	UDPTimeout        time.Duration
 	Handler           ServiceHandler
 }
 
@@ -53,6 +54,7 @@ type Service[U comparable] struct {
 	passwordMap       map[U]string
 	congestionControl string
 	authTimeout       time.Duration
+	udpTimeout        time.Duration
 	handler           ServiceHandler
 
 	quicListener io.Closer
@@ -88,6 +90,7 @@ func NewService[U comparable](options ServiceOptions) (*Service[U], error) {
 		userMap:           make(map[[16]byte]U),
 		congestionControl: options.CongestionControl,
 		authTimeout:       options.AuthTimeout,
+		udpTimeout:        options.UDPTimeout,
 		handler:           options.Handler,
 	}, nil
 }
