@@ -196,7 +196,7 @@ func (c *udpPacketConn) WritePacket(buffer *buf.Buffer, destination M.Socksaddr)
 	default:
 	}
 	if buffer.Len() > 0xffff {
-		return quic.ErrMessageTooLarge(0xffff)
+		return &quic.DatagramTooLargeError{PeerMaxDatagramFrameSize: 0xffff}
 	}
 	if !destination.IsValid() {
 		return E.New("invalid destination address")
@@ -216,7 +216,7 @@ func (c *udpPacketConn) WritePacket(buffer *buf.Buffer, destination M.Socksaddr)
 	}
 	defer message.releaseMessage()
 	var err error
-	if !c.udpStream && c.needFragment() && buffer.Len() > c.udpMTU {
+	if !c.udpStream && c.needFragment() && buffer.Len() > c.udpMTU-message.headerSize() {
 		err = c.writePackets(fragUDPMessage(message, c.udpMTU))
 	} else {
 		err = c.writePacket(message)
@@ -224,11 +224,11 @@ func (c *udpPacketConn) WritePacket(buffer *buf.Buffer, destination M.Socksaddr)
 	if err == nil {
 		return nil
 	}
-	var tooLargeErr quic.ErrMessageTooLarge
+	var tooLargeErr *quic.DatagramTooLargeError
 	if !errors.As(err, &tooLargeErr) {
 		return err
 	}
-	c.udpMTU = int(tooLargeErr)
+	c.udpMTU = int(tooLargeErr.PeerMaxDatagramFrameSize)
 	c.udpMTUTime = time.Now()
 	return c.writePackets(fragUDPMessage(message, c.udpMTU))
 }
@@ -240,7 +240,7 @@ func (c *udpPacketConn) WriteTo(p []byte, addr net.Addr) (n int, err error) {
 	default:
 	}
 	if len(p) > 0xffff {
-		return 0, quic.ErrMessageTooLarge(0xffff)
+		return 0, &quic.DatagramTooLargeError{PeerMaxDatagramFrameSize: 0xffff}
 	}
 	destination := M.SocksaddrFromNet(addr)
 	if !destination.IsValid() {
@@ -259,7 +259,7 @@ func (c *udpPacketConn) WriteTo(p []byte, addr net.Addr) (n int, err error) {
 		destination:   destination,
 		data:          buf.As(p),
 	}
-	if !c.udpStream && c.needFragment() && len(p) > c.udpMTU {
+	if !c.udpStream && c.needFragment() && len(p) > c.udpMTU-message.headerSize() {
 		err = c.writePackets(fragUDPMessage(message, c.udpMTU))
 		if err == nil {
 			return len(p), nil
@@ -270,11 +270,11 @@ func (c *udpPacketConn) WriteTo(p []byte, addr net.Addr) (n int, err error) {
 	if err == nil {
 		return len(p), nil
 	}
-	var tooLargeErr quic.ErrMessageTooLarge
+	var tooLargeErr *quic.DatagramTooLargeError
 	if !errors.As(err, &tooLargeErr) {
 		return
 	}
-	c.udpMTU = int(tooLargeErr)
+	c.udpMTU = int(tooLargeErr.PeerMaxDatagramFrameSize)
 	c.udpMTUTime = time.Now()
 	err = c.writePackets(fragUDPMessage(message, c.udpMTU))
 	if err == nil {
