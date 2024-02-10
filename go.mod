@@ -4,7 +4,7 @@ go 1.20
 
 require (
 	github.com/gofrs/uuid/v5 v5.1.0
-	github.com/sagernet/quic-go v0.40.1
+	github.com/sagernet/quic-go v0.42.0-beta.3
 	github.com/sagernet/sing v0.3.8
 	golang.org/x/crypto v0.22.0
 	golang.org/x/exp v0.0.0-20240416160154-fe59bbe5cc7f
