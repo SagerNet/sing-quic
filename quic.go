@@ -3,6 +3,7 @@ package qtls
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"net"
 	"net/http"
 
@@ -37,6 +38,7 @@ type EarlyListener interface {
 }
 
 func Dial(ctx context.Context, conn net.PacketConn, addr net.Addr, config aTLS.Config, quicConfig *quic.Config) (quic.Connection, error) {
+	errors.As()
 	if quicTLSConfig, isQUICConfig := config.(Config); isQUICConfig {
 		return quicTLSConfig.Dial(ctx, conn, addr, quicConfig)
 	}
