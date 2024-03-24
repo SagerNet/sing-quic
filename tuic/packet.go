@@ -437,6 +437,11 @@ func (d *udpDefragger) feed(m *udpMessage) *udpMessage {
 		}
 		item.messages = nil
 		return newMessage
+	} else {
+		newMessage.releaseMessage()
+		for _, message := range item.messages {
+			message.releaseMessage()
+		}
 	}
 	item.messages = nil
 	return nil

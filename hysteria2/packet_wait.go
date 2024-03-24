@@ -20,11 +20,11 @@ func (c *udpPacketConn) WaitReadPacket() (buffer *buf.Buffer, destination M.Sock
 		if c.readWaitOptions.NeedHeadroom() {
 			buffer = c.readWaitOptions.NewPacketBuffer()
 			_, err = buffer.Write(p.data.Bytes())
+			p.releaseMessage()
 			if err != nil {
 				buffer.Release()
-				return nil, M.Socksaddr{}, err
+				return
 			}
-			p.releaseMessage()
 			c.readWaitOptions.PostReturn(buffer)
 		} else {
 			buffer = p.data
