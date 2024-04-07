@@ -180,8 +180,11 @@ func (c *udpPacketConn) ReadFrom(p []byte) (n int, addr net.Addr, err error) {
 }
 
 func (c *udpPacketConn) needFragment() bool {
+	if c.udpMTU == 0 {
+		return false
+	}
 	nowTime := time.Now()
-	if c.udpMTU > 0 && nowTime.Sub(c.udpMTUTime) < 5*time.Second {
+	if nowTime.Sub(c.udpMTUTime) < 5*time.Second {
 		c.udpMTUTime = nowTime
 		return true
 	}
@@ -216,7 +219,7 @@ func (c *udpPacketConn) WritePacket(buffer *buf.Buffer, destination M.Socksaddr)
 	}
 	defer message.releaseMessage()
 	var err error
-	if !c.udpStream && c.needFragment() && buffer.Len() > c.udpMTU {
+	if !c.udpStream && c.needFragment() && buffer.Len() > c.udpMTU-message.headerSize() {
 		err = c.writePackets(fragUDPMessage(message, c.udpMTU))
 	} else {
 		err = c.writePacket(message)
@@ -259,7 +262,7 @@ func (c *udpPacketConn) WriteTo(p []byte, addr net.Addr) (n int, err error) {
 		destination:   destination,
 		data:          buf.As(p),
 	}
-	if !c.udpStream && c.needFragment() && len(p) > c.udpMTU {
+	if !c.udpStream && c.needFragment() && len(p) > c.udpMTU-message.headerSize() {
 		err = c.writePackets(fragUDPMessage(message, c.udpMTU))
 		if err == nil {
 			return len(p), nil
