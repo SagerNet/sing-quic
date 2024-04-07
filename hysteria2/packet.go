@@ -6,7 +6,6 @@ import (
 	"encoding/binary"
 	"errors"
 	"io"
-	"math"
 	"net"
 	"os"
 	"sync"
@@ -16,7 +15,6 @@ import (
 	"github.com/sagernet/quic-go/quicvarint"
 	"github.com/sagernet/sing-quic/hysteria2/internal/protocol"
 	"github.com/sagernet/sing/common"
-	"github.com/sagernet/sing/common/atomic"
 	"github.com/sagernet/sing/common/buf"
 	"github.com/sagernet/sing/common/cache"
 	M "github.com/sagernet/sing/common/metadata"
@@ -121,7 +119,7 @@ type udpPacketConn struct {
 	quicConn        quic.Connection
 	data            chan *udpMessage
 	udpMTU          int
-	packetId        atomic.Uint32
+	packetId        uint16
 	closeOnce       sync.Once
 	defragger       *udpDefragger
 	onDestroy       func()
@@ -180,15 +178,11 @@ func (c *udpPacketConn) WritePacket(buffer *buf.Buffer, destination M.Socksaddr)
 	if buffer.Len() > 0xffff {
 		return quic.ErrMessageTooLarge(0xffff)
 	}
-	packetId := c.packetId.Add(1)
-	if packetId > math.MaxUint16 {
-		c.packetId.Store(0)
-		packetId = 0
-	}
+	c.packetId++
 	message := allocMessage()
 	*message = udpMessage{
 		sessionID:     c.sessionID,
-		packetID:      uint16(packetId),
+		packetID:      uint16(c.packetId),
 		fragmentTotal: 1,
 		destination:   destination.String(),
 		data:          buffer,
@@ -219,15 +213,11 @@ func (c *udpPacketConn) WriteTo(p []byte, addr net.Addr) (n int, err error) {
 	if len(p) > 0xffff {
 		return 0, quic.ErrMessageTooLarge(0xffff)
 	}
-	packetId := c.packetId.Add(1)
-	if packetId > math.MaxUint16 {
-		c.packetId.Store(0)
-		packetId = 0
-	}
+	c.packetId++
 	message := allocMessage()
 	*message = udpMessage{
 		sessionID:     c.sessionID,
-		packetID:      uint16(packetId),
+		packetID:      uint16(c.packetId),
 		fragmentTotal: 1,
 		destination:   addr.String(),
 		data:          buf.As(p),
