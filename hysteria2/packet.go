@@ -180,15 +180,11 @@ func (c *udpPacketConn) WritePacket(buffer *buf.Buffer, destination M.Socksaddr)
 	if buffer.Len() > 0xffff {
 		return quic.ErrMessageTooLarge(0xffff)
 	}
-	packetId := c.packetId.Add(1)
-	if packetId > math.MaxUint16 {
-		c.packetId.Store(0)
-		packetId = 0
-	}
+	packetId := uint16(c.packetId.Add(1) % math.MaxUint16)
 	message := allocMessage()
 	*message = udpMessage{
 		sessionID:     c.sessionID,
-		packetID:      uint16(packetId),
+		packetID:      packetId,
 		fragmentTotal: 1,
 		destination:   destination.String(),
 		data:          buffer,
@@ -219,15 +215,11 @@ func (c *udpPacketConn) WriteTo(p []byte, addr net.Addr) (n int, err error) {
 	if len(p) > 0xffff {
 		return 0, quic.ErrMessageTooLarge(0xffff)
 	}
-	packetId := c.packetId.Add(1)
-	if packetId > math.MaxUint16 {
-		c.packetId.Store(0)
-		packetId = 0
-	}
+	packetId := uint16(c.packetId.Add(1) % math.MaxUint16)
 	message := allocMessage()
 	*message = udpMessage{
 		sessionID:     c.sessionID,
-		packetID:      uint16(packetId),
+		packetID:      packetId,
 		fragmentTotal: 1,
 		destination:   addr.String(),
 		data:          buf.As(p),
