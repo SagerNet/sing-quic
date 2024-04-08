@@ -84,12 +84,12 @@ func (m *udpMessage) headerSize() int {
 }
 
 func fragUDPMessage(message *udpMessage, maxPacketSize int) []*udpMessage {
-	if message.data.Len() <= maxPacketSize {
+	udpMTU := maxPacketSize - message.headerSize()
+	if message.data.Len() <= udpMTU {
 		return []*udpMessage{message}
 	}
 	var fragments []*udpMessage
 	originPacket := message.data.Bytes()
-	udpMTU := maxPacketSize - message.headerSize()
 	for remaining := len(originPacket); remaining > 0; remaining -= udpMTU {
 		fragment := allocMessage()
 		*fragment = *message
