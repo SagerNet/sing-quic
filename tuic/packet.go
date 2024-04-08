@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"io"
+	"math"
 	"net"
 	"os"
 	"sync"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/sagernet/quic-go"
 	"github.com/sagernet/sing/common"
+	"github.com/sagernet/sing/common/atomic"
 	"github.com/sagernet/sing/common/buf"
 	"github.com/sagernet/sing/common/cache"
 	E "github.com/sagernet/sing/common/exceptions"
@@ -127,7 +129,7 @@ type udpPacketConn struct {
 	udpStream       bool
 	udpMTU          int
 	udpMTUTime      time.Time
-	packetId        uint16
+	packetId        atomic.Uint32
 	closeOnce       sync.Once
 	isServer        bool
 	defragger       *udpDefragger
@@ -202,11 +204,15 @@ func (c *udpPacketConn) WritePacket(buffer *buf.Buffer, destination M.Socksaddr)
 	if !destination.IsValid() {
 		return E.New("invalid destination address")
 	}
-	c.packetId++
+	packetId := c.packetId.Add(1)
+	if packetId > math.MaxUint16 {
+		c.packetId.Store(0)
+		packetId = 0
+	}
 	message := allocMessage()
 	*message = udpMessage{
 		sessionID:     c.sessionID,
-		packetID:      uint16(c.packetId),
+		packetID:      uint16(packetId),
 		fragmentTotal: 1,
 		destination:   destination,
 		data:          buffer,
@@ -243,11 +249,15 @@ func (c *udpPacketConn) WriteTo(p []byte, addr net.Addr) (n int, err error) {
 	if !destination.IsValid() {
 		return 0, E.New("invalid destination address")
 	}
-	c.packetId++
+	packetId := c.packetId.Add(1)
+	if packetId > math.MaxUint16 {
+		c.packetId.Store(0)
+		packetId = 0
+	}
 	message := allocMessage()
 	*message = udpMessage{
 		sessionID:     c.sessionID,
-		packetID:      uint16(c.packetId),
+		packetID:      uint16(packetId),
 		fragmentTotal: 1,
 		destination:   destination,
 		data:          buf.As(p),
