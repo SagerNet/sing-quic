@@ -227,7 +227,7 @@ func (c *udpPacketConn) WritePacket(buffer *buf.Buffer, destination M.Socksaddr)
 	if !errors.As(err, &tooLargeErr) {
 		return err
 	}
-	c.udpMTU = int(tooLargeErr)
+	c.udpMTU = int(tooLargeErr) - 3
 	c.udpMTUTime = time.Now()
 	return c.writePackets(fragUDPMessage(message, c.udpMTU))
 }
@@ -269,7 +269,7 @@ func (c *udpPacketConn) WriteTo(p []byte, addr net.Addr) (n int, err error) {
 	if !errors.As(err, &tooLargeErr) {
 		return
 	}
-	c.udpMTU = int(tooLargeErr)
+	c.udpMTU = int(tooLargeErr) - 3
 	c.udpMTUTime = time.Now()
 	err = c.writePackets(fragUDPMessage(message, c.udpMTU))
 	if err == nil {
