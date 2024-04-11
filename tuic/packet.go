@@ -53,10 +53,9 @@ type udpMessage struct {
 }
 
 func (m *udpMessage) release() {
-	if !m.referenced {
-		return
+	if m.referenced {
+		*m = udpMessage{}
 	}
-	*m = udpMessage{}
 	udpMessagePool.Put(m)
 }
 
@@ -400,7 +399,7 @@ func (d *udpDefragger) feed(m *udpMessage) *udpMessage {
 	if m.fragmentID >= m.fragmentTotal {
 		return nil
 	}
-	item, _ := d.packetMap.LoadOrStore(m.packetID, newPacketItem)
+	item, _ := d.packetMap.LoadOrStore(m.sessionID, newPacketItem)
 	item.access.Lock()
 	defer item.access.Unlock()
 	if int(m.fragmentTotal) != len(item.messages) {
