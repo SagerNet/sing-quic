@@ -128,7 +128,6 @@ type udpPacketConn struct {
 	data            chan *udpMessage
 	udpStream       bool
 	udpMTU          int
-	udpMTUTime      time.Time
 	packetId        atomic.Uint32
 	closeOnce       sync.Once
 	isServer        bool
@@ -148,6 +147,7 @@ func newUDPPacketConn(ctx context.Context, quicConn quic.Connection, udpStream b
 		isServer:  isServer,
 		defragger: newUDPDefragger(),
 		onDestroy: onDestroy,
+		udpMTU:    1200 - 3,
 	}
 }
 
@@ -179,18 +179,6 @@ func (c *udpPacketConn) ReadFrom(p []byte) (n int, addr net.Addr, err error) {
 	}
 }
 
-func (c *udpPacketConn) needFragment() bool {
-	if c.udpMTU == 0 {
-		return false
-	}
-	nowTime := time.Now()
-	if nowTime.Sub(c.udpMTUTime) < 5*time.Second {
-		c.udpMTUTime = nowTime
-		return true
-	}
-	return false
-}
-
 func (c *udpPacketConn) WritePacket(buffer *buf.Buffer, destination M.Socksaddr) error {
 	defer buffer.Release()
 	select {
@@ -215,7 +203,7 @@ func (c *udpPacketConn) WritePacket(buffer *buf.Buffer, destination M.Socksaddr)
 	}
 	defer message.releaseMessage()
 	var err error
-	if !c.udpStream && c.needFragment() && buffer.Len() > c.udpMTU-message.headerSize() {
+	if !c.udpStream && buffer.Len() > c.udpMTU-message.headerSize() {
 		err = c.writePackets(fragUDPMessage(message, c.udpMTU))
 	} else {
 		err = c.writePacket(message)
@@ -228,7 +216,6 @@ func (c *udpPacketConn) WritePacket(buffer *buf.Buffer, destination M.Socksaddr)
 		return err
 	}
 	c.udpMTU = int(tooLargeErr) - 3
-	c.udpMTUTime = time.Now()
 	return c.writePackets(fragUDPMessage(message, c.udpMTU))
 }
 
@@ -254,7 +241,7 @@ func (c *udpPacketConn) WriteTo(p []byte, addr net.Addr) (n int, err error) {
 		destination:   destination,
 		data:          buf.As(p),
 	}
-	if !c.udpStream && c.needFragment() && len(p) > c.udpMTU-message.headerSize() {
+	if !c.udpStream && len(p) > c.udpMTU-message.headerSize() {
 		err = c.writePackets(fragUDPMessage(message, c.udpMTU))
 		if err == nil {
 			return len(p), nil
@@ -270,7 +257,6 @@ func (c *udpPacketConn) WriteTo(p []byte, addr net.Addr) (n int, err error) {
 		return
 	}
 	c.udpMTU = int(tooLargeErr) - 3
-	c.udpMTUTime = time.Now()
 	err = c.writePackets(fragUDPMessage(message, c.udpMTU))
 	if err == nil {
 		return len(p), nil
