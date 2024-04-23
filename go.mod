@@ -3,11 +3,11 @@ module github.com/sagernet/sing-quic
 go 1.20
 
 require (
-	github.com/gofrs/uuid/v5 v5.0.0
+	github.com/gofrs/uuid/v5 v5.1.0
 	github.com/sagernet/quic-go v0.40.1
 	github.com/sagernet/sing v0.3.8
-	golang.org/x/crypto v0.21.0
-	golang.org/x/exp v0.0.0-20240325151524-a685a6edb6d8
+	golang.org/x/crypto v0.22.0
+	golang.org/x/exp v0.0.0-20240416160154-fe59bbe5cc7f
 )
 
 require (
@@ -16,9 +16,9 @@ require (
 	github.com/onsi/ginkgo/v2 v2.9.7 // indirect
 	github.com/quic-go/qpack v0.4.0 // indirect
 	github.com/quic-go/qtls-go1-20 v0.4.1 // indirect
-	golang.org/x/net v0.22.0 // indirect
-	golang.org/x/sys v0.18.0 // indirect
+	golang.org/x/net v0.24.0 // indirect
+	golang.org/x/sys v0.19.0 // indirect
 	golang.org/x/text v0.14.0 // indirect
-	golang.org/x/tools v0.19.0 // indirect
+	golang.org/x/tools v0.20.0 // indirect
 	google.golang.org/protobuf v1.31.0 // indirect
 )
