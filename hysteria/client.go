@@ -70,6 +70,7 @@ func NewClient(options ClientOptions) (*Client, error) {
 		MaxConnectionReceiveWindow:     DefaultConnReceiveWindow,
 		MaxIdleTimeout:                 DefaultMaxIdleTimeout,
 		KeepAlivePeriod:                DefaultKeepAlivePeriod,
+		MaxDatagramFrameSize:           1197,
 	}
 	if options.StreamReceiveWindow != 0 {
 		quicConfig.InitialStreamReceiveWindow = options.StreamReceiveWindow
