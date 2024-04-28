@@ -68,7 +68,7 @@ func CreateTransport(conn net.PacketConn, quicConnPtr *quic.EarlyConnection, ser
 	}
 	return &http3.RoundTripper{
 		TLSClientConfig: tlsConfig,
-		QuicConfig:      quicConfig,
+		QUICConfig:      quicConfig,
 		EnableDatagrams: enableDatagrams,
 		Dial: func(ctx context.Context, addr string, tlsCfg *tls.Config, cfg *quic.Config) (quic.EarlyConnection, error) {
 			quicConn, err := quic.DialEarly(ctx, conn, serverAddr.UDPAddr(), tlsCfg, cfg)
