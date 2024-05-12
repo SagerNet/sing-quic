@@ -119,6 +119,9 @@ func ReadTCPResponse(r io.Reader) (bool, string, error) {
 }
 
 func WriteTCPResponse(ok bool, msg string, payload []byte) *buf.Buffer {
+	if len(msg) > MaxMessageLength {
+		msg = msg[:MaxMessageLength]
+	}
 	padding := tcpResponsePadding.String()
 	paddingLen := len(padding)
 	msgLen := len(msg)
@@ -198,7 +201,7 @@ func ParseUDPMessage(msg []byte) (*UDPMessage, error) {
 	if err != nil {
 		return nil, err
 	}
-	if lAddr == 0 || lAddr > MaxMessageLength {
+	if lAddr == 0 || lAddr > MaxAddressLength {
 		return nil, E.New("invalid address length")
 	}
 	bs := buf.Bytes()
