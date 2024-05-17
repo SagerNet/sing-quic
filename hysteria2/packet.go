@@ -308,6 +308,14 @@ func (c *udpPacketConn) SetWriteDeadline(t time.Time) error {
 	return os.ErrInvalid
 }
 
+func (c *udpPacketConn) ReaderMTU() int {
+	return protocol.MaxUDPSize
+}
+
+func (c *udpPacketConn) WriterMTU() int {
+	return protocol.MaxUDPSize
+}
+
 type udpDefragger struct {
 	packetMap *cache.LruCache[uint16, *packetItem]
 }
