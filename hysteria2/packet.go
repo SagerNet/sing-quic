@@ -177,8 +177,8 @@ func (c *udpPacketConn) WritePacket(buffer *buf.Buffer, destination M.Socksaddr)
 		return net.ErrClosed
 	default:
 	}
-	if buffer.Len() > 0xffff {
-		return &quic.DatagramTooLargeError{MaxDatagramPayloadSize: 0xffff}
+	if buffer.Len() > protocol.MaxUDPSize {
+		return &quic.DatagramTooLargeError{MaxDatagramPayloadSize: protocol.MaxUDPSize}
 	}
 	packetId := uint16(c.packetId.Add(1) % math.MaxUint16)
 	message := allocMessage()
@@ -212,8 +212,8 @@ func (c *udpPacketConn) WriteTo(p []byte, addr net.Addr) (n int, err error) {
 		return 0, net.ErrClosed
 	default:
 	}
-	if len(p) > 0xffff {
-		return 0, &quic.DatagramTooLargeError{MaxDatagramPayloadSize: 0xffff}
+	if len(p) > protocol.MaxUDPSize {
+		return 0, &quic.DatagramTooLargeError{MaxDatagramPayloadSize: protocol.MaxUDPSize}
 	}
 	packetId := uint16(c.packetId.Add(1) % math.MaxUint16)
 	message := allocMessage()
