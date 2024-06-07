@@ -60,7 +60,7 @@ const (
 	// Flag.
 	defaultStartupFullLossCount  = 8
 	quicBbr2DefaultLossThreshold = 0.02
-	maxBbrBurstPackets           = 3
+	maxBbrBurstPackets           = 10
 )
 
 type bbrMode int
