@@ -5,7 +5,6 @@ package congestion
 import (
 	"fmt"
 	"math/rand"
-	"net"
 	"time"
 
 	"github.com/sagernet/quic-go/congestion"
@@ -928,18 +927,4 @@ func (b *bbrSender) shouldExitStartupDueToLoss(lastPacketSendState *sendTimeStat
 
 func bdpFromRttAndBandwidth(rtt time.Duration, bandwidth Bandwidth) congestion.ByteCount {
 	return congestion.ByteCount(rtt) * congestion.ByteCount(bandwidth) / congestion.ByteCount(BytesPerSecond) / congestion.ByteCount(time.Second)
-}
-
-func GetInitialPacketSize(addr net.Addr) congestion.ByteCount {
-	// If this is not a UDP address, we don't know anything about the MTU.
-	// Use the minimum size of an Initial packet as the max packet size.
-	if udpAddr, ok := addr.(*net.UDPAddr); ok {
-		if udpAddr.IP.To4() != nil {
-			return congestion.InitialPacketSizeIPv4
-		} else {
-			return congestion.InitialPacketSizeIPv6
-		}
-	} else {
-		return congestion.MinInitialPacketSize
-	}
 }
