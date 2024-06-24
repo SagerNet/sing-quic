@@ -166,7 +166,7 @@ func (c *Client) offerNew(ctx context.Context) (*clientQUICConnection, error) {
 		}
 		quicConn.SetCongestionControl(congestion_meta2.NewBbrSender(
 			congestion_meta2.DefaultClock{TimeFunc: timeFunc},
-			congestion_meta2.GetInitialPacketSize(quicConn.RemoteAddr()),
+			congestion.ByteCount(quicConn.Config().InitialPacketSize),
 			congestion.ByteCount(congestion_meta1.InitialCongestionWindow),
 		))
 	}
