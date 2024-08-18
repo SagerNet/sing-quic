@@ -4,10 +4,10 @@ go 1.20
 
 require (
 	github.com/gofrs/uuid/v5 v5.2.0
-	github.com/sagernet/quic-go v0.45.1-beta.2
+	github.com/sagernet/quic-go v0.46.0-beta.4
 	github.com/sagernet/sing v0.4.1
 	golang.org/x/crypto v0.23.0
-	golang.org/x/exp v0.0.0-20190121172915-509febef88a4
+	golang.org/x/exp v0.0.0-20240416160154-fe59bbe5cc7f
 )
 
 require (
