@@ -21,6 +21,7 @@ import (
 	"github.com/sagernet/sing/common/cache"
 	M "github.com/sagernet/sing/common/metadata"
 	N "github.com/sagernet/sing/common/network"
+	"github.com/sagernet/sing/common/pipe"
 )
 
 var udpMessagePool = sync.Pool{
@@ -126,18 +127,20 @@ type udpPacketConn struct {
 	defragger       *udpDefragger
 	onDestroy       func()
 	readWaitOptions N.ReadWaitOptions
+	readDeadline    pipe.Deadline
 }
 
 func newUDPPacketConn(ctx context.Context, quicConn quic.Connection, onDestroy func()) *udpPacketConn {
 	ctx, cancel := common.ContextWithCancelCause(ctx)
 	return &udpPacketConn{
-		ctx:       ctx,
-		cancel:    cancel,
-		quicConn:  quicConn,
-		data:      make(chan *udpMessage, 64),
-		udpMTU:    1200 - 3,
-		defragger: newUDPDefragger(),
-		onDestroy: onDestroy,
+		ctx:          ctx,
+		cancel:       cancel,
+		quicConn:     quicConn,
+		data:         make(chan *udpMessage, 64),
+		udpMTU:       1200 - 3,
+		defragger:    newUDPDefragger(),
+		onDestroy:    onDestroy,
+		readDeadline: pipe.MakeDeadline(),
 	}
 }
 
@@ -150,6 +153,8 @@ func (c *udpPacketConn) ReadPacket(buffer *buf.Buffer) (destination M.Socksaddr,
 		return
 	case <-c.ctx.Done():
 		return M.Socksaddr{}, io.ErrClosedPipe
+	case <-c.readDeadline.Wait():
+		return M.Socksaddr{}, os.ErrDeadlineExceeded
 	}
 }
 
@@ -167,6 +172,8 @@ func (c *udpPacketConn) ReadFrom(p []byte) (n int, addr net.Addr, err error) {
 		return n, addr, nil
 	case <-c.ctx.Done():
 		return 0, nil, io.ErrClosedPipe
+	case <-c.readDeadline.Wait():
+		return 0, nil, os.ErrDeadlineExceeded
 	}
 }
 
@@ -301,7 +308,8 @@ func (c *udpPacketConn) SetDeadline(t time.Time) error {
 }
 
 func (c *udpPacketConn) SetReadDeadline(t time.Time) error {
-	return os.ErrInvalid
+	c.readDeadline.Set(t)
+	return nil
 }
 
 func (c *udpPacketConn) SetWriteDeadline(t time.Time) error {
