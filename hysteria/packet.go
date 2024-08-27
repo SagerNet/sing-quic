@@ -20,7 +20,6 @@ import (
 	E "github.com/sagernet/sing/common/exceptions"
 	M "github.com/sagernet/sing/common/metadata"
 	N "github.com/sagernet/sing/common/network"
-	"github.com/sagernet/sing/common/rw"
 )
 
 var udpMessagePool = sync.Pool{
@@ -404,10 +403,12 @@ func decodeUDPMessage(message *udpMessage, data []byte) error {
 	if err != nil {
 		return err
 	}
-	message.host, err = rw.ReadString(reader, int(hostLen))
+	hostBytes := make([]byte, hostLen)
+	_, err = io.ReadFull(reader, hostBytes)
 	if err != nil {
 		return err
 	}
+	message.host = string(hostBytes)
 	err = binary.Read(reader, binary.BigEndian, &message.port)
 	if err != nil {
 		return err

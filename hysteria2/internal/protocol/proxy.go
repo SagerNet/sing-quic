@@ -10,7 +10,6 @@ import (
 	"github.com/sagernet/sing/common"
 	"github.com/sagernet/sing/common/buf"
 	E "github.com/sagernet/sing/common/exceptions"
-	"github.com/sagernet/sing/common/rw"
 )
 
 const (
@@ -107,10 +106,12 @@ func ReadTCPResponse(r io.Reader) (ok bool, message string, err error) {
 	if messageLen > MaxMessageLength {
 		return false, "", E.New("invalid message length")
 	}
-	message, err = rw.ReadString(r, int(messageLen))
+	messageBytes := make([]byte, messageLen)
+	_, err = io.ReadFull(r, messageBytes)
 	if err != nil {
 		return
 	}
+	message = string(messageBytes)
 	paddingLen, err := quicvarint.Read(bReader)
 	if err != nil {
 		return
@@ -227,11 +228,12 @@ func ReadVString(reader io.Reader) (string, error) {
 	if length > MaxAddressLength {
 		return "", E.New("invalid address length")
 	}
-	value, err := rw.ReadBytes(reader, int(length))
+	stringBytes := make([]byte, length)
+	_, err = io.ReadFull(reader, stringBytes)
 	if err != nil {
 		return "", err
 	}
-	return string(value), nil
+	return string(stringBytes), nil
 }
 
 func WriteVString(writer io.Writer, value string) error {
@@ -239,7 +241,7 @@ func WriteVString(writer io.Writer, value string) error {
 	if err != nil {
 		return err
 	}
-	return rw.WriteString(writer, value)
+	return common.Error(writer.Write([]byte(value)))
 }
 
 func WriteUVariant(writer io.Writer, value uint64) error {

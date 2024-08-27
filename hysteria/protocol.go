@@ -9,7 +9,6 @@ import (
 	"github.com/sagernet/sing/common"
 	"github.com/sagernet/sing/common/buf"
 	E "github.com/sagernet/sing/common/exceptions"
-	"github.com/sagernet/sing/common/rw"
 )
 
 const (
@@ -81,10 +80,12 @@ func ReadClientHello(reader io.Reader) (*ClientHello, error) {
 	if err != nil {
 		return nil, err
 	}
-	clientHello.Auth, err = rw.ReadString(reader, int(authLen))
+	authBytes := make([]byte, authLen)
+	_, err = io.ReadFull(reader, authBytes)
 	if err != nil {
 		return nil, err
 	}
+	clientHello.Auth = string(authBytes)
 	return &clientHello, nil
 }
 
