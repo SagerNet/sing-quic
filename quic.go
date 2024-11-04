@@ -66,7 +66,7 @@ func CreateTransport(conn net.PacketConn, quicConnPtr *quic.EarlyConnection, ser
 	if err != nil {
 		return nil, err
 	}
-	return &http3.RoundTripper{
+	return &http3.Transport{
 		TLSClientConfig: tlsConfig,
 		QUICConfig:      quicConfig,
 		Dial: func(ctx context.Context, addr string, tlsCfg *tls.Config, cfg *quic.Config) (quic.EarlyConnection, error) {
