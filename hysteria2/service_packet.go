@@ -49,10 +49,7 @@ func (s *serverSession[U]) handleUDPMessage(message *udpMessage) {
 		s.udpConnMap[message.sessionID] = udpConn
 		s.udpAccess.Unlock()
 		newCtx, newConn := canceler.NewPacketConn(udpConn.ctx, udpConn, s.udpTimeout)
-		go s.handler.NewPacketConnection(newCtx, newConn, M.Metadata{
-			Source:      s.source,
-			Destination: M.ParseSocksaddr(message.destination),
-		})
+		go s.handler.NewPacketConnectionEx(newCtx, newConn, s.source, M.ParseSocksaddr(message.destination), nil)
 	}
 	udpConn.inputPacket(message)
 }
