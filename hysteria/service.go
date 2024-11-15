@@ -46,8 +46,8 @@ type ServiceOptions struct {
 }
 
 type ServerHandler interface {
-	N.TCPConnectionHandler
-	N.UDPConnectionHandler
+	N.TCPConnectionHandlerEx
+	N.UDPConnectionHandlerEx
 }
 
 type Service[U comparable] struct {
@@ -244,10 +244,7 @@ func (s *serverSession[U]) handleStream(stream quic.Stream) error {
 	}
 	ctx := auth.ContextWithUser(s.ctx, s.authUser)
 	if !request.UDP {
-		_ = s.handler.NewConnection(ctx, &serverConn{Stream: stream}, M.Metadata{
-			Source:      s.source,
-			Destination: M.ParseSocksaddrHostPort(request.Host, request.Port),
-		})
+		s.handler.NewConnectionEx(ctx, &serverConn{Stream: stream}, s.source, M.ParseSocksaddrHostPort(request.Host, request.Port), nil)
 	} else {
 		if s.udpDisabled {
 			return WriteServerResponse(stream, ServerResponse{
@@ -278,10 +275,7 @@ func (s *serverSession[U]) handleStream(stream quic.Stream) error {
 			return err
 		}
 		newCtx, newConn := canceler.NewPacketConn(udpConn.ctx, udpConn, s.udpTimeout)
-		go s.handler.NewPacketConnection(newCtx, newConn, M.Metadata{
-			Source:      s.source,
-			Destination: M.ParseSocksaddrHostPort(request.Host, request.Port),
-		})
+		go s.handler.NewPacketConnectionEx(newCtx, newConn, s.source, M.ParseSocksaddrHostPort(request.Host, request.Port), nil)
 		holdBuffer := make([]byte, 1024)
 		for {
 			_, hErr := stream.Read(holdBuffer)
