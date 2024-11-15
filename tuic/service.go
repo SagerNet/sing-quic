@@ -40,8 +40,8 @@ type ServiceOptions struct {
 }
 
 type ServiceHandler interface {
-	N.TCPConnectionHandler
-	N.UDPConnectionHandler
+	N.TCPConnectionHandlerEx
+	N.UDPConnectionHandlerEx
 }
 
 type Service[U comparable] struct {
@@ -362,11 +362,7 @@ func (s *serverSession[U]) handleStream(stream quic.Stream) error {
 	} else {
 		conn = bufio.NewCachedConn(conn, buffer)
 	}
-	ctx := auth.ContextWithUser(s.ctx, s.authUser)
-	_ = s.handler.NewConnection(ctx, conn, M.Metadata{
-		Source:      s.source,
-		Destination: destination,
-	})
+	s.handler.NewConnectionEx(auth.ContextWithUser(s.ctx, s.authUser), conn, s.source, destination, nil)
 	return nil
 }
 

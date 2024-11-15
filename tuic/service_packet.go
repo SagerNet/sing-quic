@@ -5,7 +5,6 @@ import (
 	"github.com/sagernet/sing/common/auth"
 	"github.com/sagernet/sing/common/canceler"
 	E "github.com/sagernet/sing/common/exceptions"
-	M "github.com/sagernet/sing/common/metadata"
 )
 
 func (s *serverSession[U]) loopMessages() {
@@ -67,10 +66,7 @@ func (s *serverSession[U]) handleUDPMessage(message *udpMessage, udpStream bool)
 		s.udpConnMap[message.sessionID] = udpConn
 		s.udpAccess.Unlock()
 		newCtx, newConn := canceler.NewPacketConn(udpConn.ctx, udpConn, s.udpTimeout)
-		go s.handler.NewPacketConnection(newCtx, newConn, M.Metadata{
-			Source:      s.source,
-			Destination: message.destination,
-		})
+		go s.handler.NewPacketConnectionEx(newCtx, newConn, s.source, message.destination, nil)
 	}
 	udpConn.inputPacket(message)
 }

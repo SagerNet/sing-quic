@@ -47,8 +47,8 @@ type ServiceOptions struct {
 }
 
 type ServerHandler interface {
-	N.TCPConnectionHandler
-	N.UDPConnectionHandler
+	N.TCPConnectionHandlerEx
+	N.UDPConnectionHandlerEx
 }
 
 type Service[U comparable] struct {
@@ -250,8 +250,6 @@ func (s *serverSession[U]) handleStream0(frameType http3.FrameType, id quic.Conn
 	}
 	go func() {
 		hErr := s.handleStream(stream)
-		stream.CancelRead(0)
-		stream.Close()
 		if hErr != nil {
 			stream.CancelRead(0)
 			stream.Close()
@@ -266,11 +264,7 @@ func (s *serverSession[U]) handleStream(stream quic.Stream) error {
 	if err != nil {
 		return E.New("read TCP request")
 	}
-	ctx := auth.ContextWithUser(s.ctx, s.authUser)
-	_ = s.handler.NewConnection(ctx, &serverConn{Stream: stream}, M.Metadata{
-		Source:      s.source,
-		Destination: M.ParseSocksaddr(destinationString),
-	})
+	s.handler.NewConnectionEx(auth.ContextWithUser(s.ctx, s.authUser), &serverConn{Stream: stream}, s.source, M.ParseSocksaddr(destinationString), nil)
 	return nil
 }
 
@@ -299,7 +293,7 @@ type serverConn struct {
 
 func (c *serverConn) HandshakeFailure(err error) error {
 	if c.responseWritten {
-		return os.ErrClosed
+		return os.ErrInvalid
 	}
 	c.responseWritten = true
 	buffer := protocol.WriteTCPResponse(false, err.Error(), nil)
