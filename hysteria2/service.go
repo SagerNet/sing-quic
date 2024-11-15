@@ -299,7 +299,7 @@ type serverConn struct {
 
 func (c *serverConn) HandshakeFailure(err error) error {
 	if c.responseWritten {
-		return os.ErrClosed
+		return os.ErrInvalid
 	}
 	c.responseWritten = true
 	buffer := protocol.WriteTCPResponse(false, err.Error(), nil)

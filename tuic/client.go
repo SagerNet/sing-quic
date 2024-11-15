@@ -20,18 +20,10 @@ import (
 	aTLS "github.com/sagernet/sing/common/tls"
 )
 
-type ClientOptions struct {
-	Context           context.Context
-	Dialer            N.Dialer
-	ServerAddress     M.Socksaddr
-	TLSConfig         aTLS.Config
-	UUID              [16]byte
-	Password          string
-	CongestionControl string
-	UDPStream         bool
-	ZeroRTTHandshake  bool
-	Heartbeat         time.Duration
-}
+var (
+	_ N.Dialer        = (*Client)(nil)
+	_ N.PayloadDialer = (*Client)(nil)
+)
 
 type Client struct {
 	ctx               context.Context
@@ -48,6 +40,19 @@ type Client struct {
 
 	connAccess sync.RWMutex
 	conn       *clientQUICConnection
+}
+
+type ClientOptions struct {
+	Context           context.Context
+	Dialer            N.Dialer
+	ServerAddress     M.Socksaddr
+	TLSConfig         aTLS.Config
+	UUID              [16]byte
+	Password          string
+	CongestionControl string
+	UDPStream         bool
+	ZeroRTTHandshake  bool
+	Heartbeat         time.Duration
 }
 
 func NewClient(options ClientOptions) (*Client, error) {
@@ -171,23 +176,73 @@ func (c *Client) loopHeartbeats(conn *clientQUICConnection) {
 	}
 }
 
-func (c *Client) DialConn(ctx context.Context, destination M.Socksaddr) (net.Conn, error) {
-	conn, err := c.offer(ctx)
-	if err != nil {
-		return nil, err
+func (c *Client) DialContext(ctx context.Context, network string, destination M.Socksaddr) (net.Conn, error) {
+	switch N.NetworkName(network) {
+	case N.NetworkTCP:
+		return c.DialPayloadContext(ctx, network, destination, nil)
+	case N.NetworkUDP:
+		packetConn, err := c.ListenPacket(ctx, destination)
+		if err != nil {
+			return nil, err
+		}
+		return bufio.NewBindPacketConn(packetConn, destination), nil
+	default:
+		return nil, E.Cause(N.ErrUnknownNetwork, network)
 	}
-	stream, err := conn.quicConn.OpenStream()
-	if err != nil {
-		return nil, err
-	}
-	return &clientConn{
-		Stream:      stream,
-		parent:      conn,
-		destination: destination,
-	}, nil
 }
 
-func (c *Client) ListenPacket(ctx context.Context) (net.PacketConn, error) {
+func (c *Client) DialPayloadContext(ctx context.Context, network string, destination M.Socksaddr, payloads []*buf.Buffer) (net.Conn, error) {
+	switch N.NetworkName(network) {
+	case N.NetworkTCP:
+		conn, err := c.offer(ctx)
+		if err != nil {
+			buf.ReleaseMulti(payloads)
+			return nil, err
+		}
+		stream, err := conn.quicConn.OpenStreamSync(ctx)
+		if err != nil {
+			buf.ReleaseMulti(payloads)
+			return nil, err
+		}
+		request := buf.NewSize(2 + AddressSerializer.AddrPortLen(destination) + buf.LenMulti(payloads))
+		defer request.Release()
+		request.WriteByte(Version)
+		request.WriteByte(CommandConnect)
+		common.Must(AddressSerializer.WriteAddrPort(request, destination))
+		for _, payload := range payloads {
+			common.Must1(request.Write(payload.Bytes()))
+			payload.Release()
+		}
+		_, err = stream.Write(request.Bytes())
+		if err != nil {
+			conn.closeWithError(err)
+			return nil, E.Cause(baderror.WrapQUIC(err), "write request")
+		}
+		return &clientConn{
+			Stream:      stream,
+			parent:      conn,
+			destination: destination,
+		}, nil
+	case N.NetworkUDP:
+		packetConn, err := c.ListenPacket(ctx, destination)
+		if err != nil {
+			buf.ReleaseMulti(payloads)
+			return nil, err
+		}
+		for _, payload := range payloads {
+			_, err = packetConn.WriteTo(payload.Bytes(), destination)
+			payload.Release()
+			if err != nil {
+				return nil, E.Cause(err, "write payload")
+			}
+		}
+		return bufio.NewBindPacketConn(packetConn, destination), nil
+	default:
+		return nil, E.Cause(N.ErrUnknownNetwork, network)
+	}
+}
+
+func (c *Client) ListenPacket(ctx context.Context, destination M.Socksaddr) (net.PacketConn, error) {
 	conn, err := c.offer(ctx)
 	if err != nil {
 		return nil, err
@@ -251,13 +306,8 @@ func (c *clientQUICConnection) closeWithError(err error) {
 
 type clientConn struct {
 	quic.Stream
-	parent         *clientQUICConnection
-	destination    M.Socksaddr
-	requestWritten bool
-}
-
-func (c *clientConn) NeedHandshake() bool {
-	return !c.requestWritten
+	parent      *clientQUICConnection
+	destination M.Socksaddr
 }
 
 func (c *clientConn) Read(b []byte) (n int, err error) {
@@ -266,24 +316,6 @@ func (c *clientConn) Read(b []byte) (n int, err error) {
 }
 
 func (c *clientConn) Write(b []byte) (n int, err error) {
-	if !c.requestWritten {
-		request := buf.NewSize(2 + AddressSerializer.AddrPortLen(c.destination) + len(b))
-		defer request.Release()
-		request.WriteByte(Version)
-		request.WriteByte(CommandConnect)
-		err = AddressSerializer.WriteAddrPort(request, c.destination)
-		if err != nil {
-			return
-		}
-		request.Write(b)
-		_, err = c.Stream.Write(request.Bytes())
-		if err != nil {
-			c.parent.closeWithError(E.Cause(err, "create new connection"))
-			return 0, baderror.WrapQUIC(err)
-		}
-		c.requestWritten = true
-		return len(b), nil
-	}
 	n, err = c.Stream.Write(b)
 	return n, baderror.WrapQUIC(err)
 }

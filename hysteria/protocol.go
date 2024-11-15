@@ -178,13 +178,13 @@ func ReadClientRequest(stream io.Reader) (*ClientRequest, error) {
 	return &clientRequest, nil
 }
 
-func WriteClientRequest(request ClientRequest, payload []byte) *buf.Buffer {
+func WriteClientRequest(request ClientRequest, payloads []*buf.Buffer) *buf.Buffer {
 	var requestLen int
 	requestLen += 1 // udp
 	requestLen += 2 // host len
 	requestLen += len(request.Host)
 	requestLen += 2 // port
-	buffer := buf.NewSize(requestLen + len(payload))
+	buffer := buf.NewSize(requestLen + buf.LenMulti(payloads))
 	if request.UDP {
 		common.Must(buffer.WriteByte(1))
 	} else {
@@ -194,8 +194,11 @@ func WriteClientRequest(request ClientRequest, payload []byte) *buf.Buffer {
 		binary.Write(buffer, binary.BigEndian, uint16(len(request.Host))),
 		common.Error(buffer.WriteString(request.Host)),
 		binary.Write(buffer, binary.BigEndian, request.Port),
-		common.Error(buffer.Write(payload)),
 	)
+	for _, payload := range payloads {
+		common.Must1(buffer.Write(payload.Bytes()))
+		payload.Release()
+	}
 	return buffer
 }
 

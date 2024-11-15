@@ -330,7 +330,7 @@ type serverConn struct {
 
 func (c *serverConn) HandshakeFailure(err error) error {
 	if c.responseWritten {
-		return os.ErrClosed
+		return os.ErrInvalid
 	}
 	c.responseWritten = true
 	return WriteServerResponse(c.Stream, ServerResponse{

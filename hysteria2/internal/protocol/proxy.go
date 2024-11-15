@@ -66,21 +66,24 @@ func ReadTCPRequest(r io.Reader) (string, error) {
 	return string(addrBuf), nil
 }
 
-func WriteTCPRequest(addr string, payload []byte) *buf.Buffer {
+func WriteTCPRequest(addr string, payloads []*buf.Buffer) *buf.Buffer {
 	padding := tcpRequestPadding.String()
 	paddingLen := len(padding)
 	addrLen := len(addr)
 	sz := int(quicvarint.Len(FrameTypeTCPRequest)) +
 		int(quicvarint.Len(uint64(addrLen))) + addrLen +
 		int(quicvarint.Len(uint64(paddingLen))) + paddingLen
-	buffer := buf.NewSize(sz + len(payload))
+	buffer := buf.NewSize(sz + buf.LenMulti(payloads))
 	bufferContent := buffer.Extend(sz)
 	i := varintPut(bufferContent, FrameTypeTCPRequest)
 	i += varintPut(bufferContent[i:], uint64(addrLen))
 	i += copy(bufferContent[i:], addr)
 	i += varintPut(bufferContent[i:], uint64(paddingLen))
 	copy(bufferContent[i:], padding)
-	buffer.Write(payload)
+	for _, payload := range payloads {
+		buffer.Write(payload.Bytes())
+		payload.Release()
+	}
 	return buffer
 }
 
