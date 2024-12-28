@@ -69,6 +69,10 @@ func (s *SalamanderPacketConn) WriteTo(p []byte, addr net.Addr) (n int, err erro
 	return len(p), nil
 }
 
+func (s *SalamanderPacketConn) Upstream() any {
+	return s.PacketConn
+}
+
 type VectorisedSalamanderPacketConn struct {
 	SalamanderPacketConn
 	writer N.VectorisedPacketWriter
