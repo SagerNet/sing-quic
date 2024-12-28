@@ -3,11 +3,14 @@ package hysteria2
 import (
 	"context"
 	"io"
+	"math"
 	"net"
 	"net/http"
 	"net/url"
 	"os"
 	"runtime"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -36,6 +39,8 @@ type ClientOptions struct {
 	Logger             logger.Logger
 	BrutalDebug        bool
 	ServerAddress      M.Socksaddr
+	ServerPorts        []string
+	HopInterval        time.Duration
 	SendBPS            uint64
 	ReceiveBPS         uint64
 	SalamanderPassword string
@@ -50,6 +55,8 @@ type Client struct {
 	logger             logger.Logger
 	brutalDebug        bool
 	serverAddr         M.Socksaddr
+	serverPorts        []uint16
+	hopInterval        time.Duration
 	sendBPS            uint64
 	receiveBPS         uint64
 	salamanderPassword string
@@ -76,12 +83,22 @@ func NewClient(options ClientOptions) (*Client, error) {
 	if len(options.TLSConfig.NextProtos()) == 0 {
 		options.TLSConfig.SetNextProtos([]string{http3.NextProtoH3})
 	}
+	var serverPorts []uint16
+	if len(options.ServerPorts) > 0 {
+		var err error
+		serverPorts, err = parsePorts(options.ServerPorts)
+		if err != nil {
+			return nil, err
+		}
+	}
 	return &Client{
 		ctx:                options.Context,
 		dialer:             options.Dialer,
 		logger:             options.Logger,
 		brutalDebug:        options.BrutalDebug,
 		serverAddr:         options.ServerAddress,
+		serverPorts:        serverPorts,
+		hopInterval:        options.HopInterval,
 		sendBPS:            options.SendBPS,
 		receiveBPS:         options.ReceiveBPS,
 		salamanderPassword: options.SalamanderPassword,
@@ -90,6 +107,38 @@ func NewClient(options ClientOptions) (*Client, error) {
 		quicConfig:         quicConfig,
 		udpDisabled:        options.UDPDisabled,
 	}, nil
+}
+
+func parsePorts(serverPorts []string) ([]uint16, error) {
+	var portList []uint16
+	for _, portRange := range serverPorts {
+		if !strings.Contains(portRange, ":") {
+			return nil, E.New("bad port range: ", portRange)
+		}
+		subIndex := strings.Index(portRange, ":")
+		var (
+			start, end uint64
+			err        error
+		)
+		if subIndex > 0 {
+			start, err = strconv.ParseUint(portRange[:subIndex], 10, 16)
+			if err != nil {
+				return nil, E.Cause(err, E.Cause(err, "bad port range: ", portRange))
+			}
+		}
+		if subIndex == len(portRange)-1 {
+			end = math.MaxUint16
+		} else {
+			end, err = strconv.ParseUint(portRange[subIndex+1:], 10, 16)
+			if err != nil {
+				return nil, E.Cause(err, E.Cause(err, "bad port range: ", portRange))
+			}
+		}
+		for i := start; i <= end; i++ {
+			portList = append(portList, uint16(i))
+		}
+	}
+	return portList, nil
 }
 
 func (c *Client) offer(ctx context.Context) (*clientQUICConnection, error) {
@@ -111,19 +160,34 @@ func (c *Client) offer(ctx context.Context) (*clientQUICConnection, error) {
 }
 
 func (c *Client) offerNew(ctx context.Context) (*clientQUICConnection, error) {
-	udpConn, err := c.dialer.DialContext(c.ctx, "udp", c.serverAddr)
+	dialFunc := func(serverAddr M.Socksaddr) (net.PacketConn, error) {
+		udpConn, err := c.dialer.DialContext(c.ctx, "udp", serverAddr)
+		if err != nil {
+			return nil, err
+		}
+		var packetConn net.PacketConn
+		packetConn = bufio.NewUnbindPacketConn(udpConn)
+		if c.salamanderPassword != "" {
+			packetConn = NewSalamanderConn(packetConn, []byte(c.salamanderPassword))
+		}
+		return packetConn, nil
+	}
+	var (
+		packetConn net.PacketConn
+		err        error
+	)
+	if len(c.serverPorts) == 0 {
+		packetConn, err = dialFunc(c.serverAddr)
+	} else {
+		packetConn, err = NewHopPacketConn(dialFunc, c.serverAddr, c.serverPorts, c.hopInterval)
+	}
 	if err != nil {
 		return nil, err
-	}
-	var packetConn net.PacketConn
-	packetConn = bufio.NewUnbindPacketConn(udpConn)
-	if c.salamanderPassword != "" {
-		packetConn = NewSalamanderConn(packetConn, []byte(c.salamanderPassword))
 	}
 	var quicConn quic.EarlyConnection
 	http3Transport, err := qtls.CreateTransport(packetConn, &quicConn, c.serverAddr, c.tlsConfig, c.quicConfig)
 	if err != nil {
-		udpConn.Close()
+		packetConn.Close()
 		return nil, err
 	}
 	request := &http.Request{
@@ -141,14 +205,14 @@ func (c *Client) offerNew(ctx context.Context) (*clientQUICConnection, error) {
 		if quicConn != nil {
 			quicConn.CloseWithError(0, "")
 		}
-		udpConn.Close()
+		packetConn.Close()
 		return nil, err
 	}
 	if response.StatusCode != protocol.StatusAuthOK {
 		if quicConn != nil {
 			quicConn.CloseWithError(0, "")
 		}
-		udpConn.Close()
+		packetConn.Close()
 		return nil, E.New("authentication failed, status code: ", response.StatusCode)
 	}
 	response.Body.Close()
@@ -172,7 +236,7 @@ func (c *Client) offerNew(ctx context.Context) (*clientQUICConnection, error) {
 	}
 	conn := &clientQUICConnection{
 		quicConn:    quicConn,
-		rawConn:     udpConn,
+		rawConn:     packetConn,
 		connDone:    make(chan struct{}),
 		udpDisabled: !authResponse.UDPEnabled,
 		udpConnMap:  make(map[uint32]*udpPacketConn),
