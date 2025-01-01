@@ -188,7 +188,7 @@ func (s *serverSession[U]) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			protocol.AuthResponseToHeader(w.Header(), protocol.AuthResponse{
 				UDPEnabled: !s.udpDisabled,
 				Rx:         s.receiveBPS,
-				RxAuto:     s.ignoreClientBandwidth,
+				RxAuto:     s.receiveBPS == 0 && s.ignoreClientBandwidth,
 			})
 			w.WriteHeader(protocol.StatusAuthOK)
 			return
@@ -201,7 +201,12 @@ func (s *serverSession[U]) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		s.authUser = user
 		s.authenticated = true
-		if !s.ignoreClientBandwidth && request.Rx > 0 {
+		var rxAuto bool
+		if s.receiveBPS > 0 && s.ignoreClientBandwidth && request.Rx == 0 {
+			s.logger.Debug("process connection from ", r.RemoteAddr, ": BBR disabled by server")
+			s.masqueradeHandler.ServeHTTP(w, r)
+			return
+		} else if !(s.receiveBPS == 0 && s.ignoreClientBandwidth) && request.Rx > 0 {
 			rx := request.Rx
 			if s.sendBPS > 0 && rx > s.sendBPS {
 				rx = s.sendBPS
@@ -217,11 +222,12 @@ func (s *serverSession[U]) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				congestion.ByteCount(s.quicConn.Config().InitialPacketSize),
 				congestion.ByteCount(congestion_meta1.InitialCongestionWindow),
 			))
+			rxAuto = true
 		}
 		protocol.AuthResponseToHeader(w.Header(), protocol.AuthResponse{
 			UDPEnabled: !s.udpDisabled,
 			Rx:         s.receiveBPS,
-			RxAuto:     s.ignoreClientBandwidth,
+			RxAuto:     rxAuto,
 		})
 		w.WriteHeader(protocol.StatusAuthOK)
 		if s.ctx.Done() != nil {
