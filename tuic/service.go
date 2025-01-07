@@ -163,7 +163,7 @@ func (s *Service[U]) handleConnection(connection quic.Connection) {
 		Service:    s,
 		ctx:        s.ctx,
 		quicConn:   connection,
-		source:     M.SocksaddrFromNet(connection.RemoteAddr()),
+		source:     M.SocksaddrFromNet(connection.RemoteAddr()).Unwrap(),
 		connDone:   make(chan struct{}),
 		authDone:   make(chan struct{}),
 		udpConnMap: make(map[uint16]*udpPacketConn),
