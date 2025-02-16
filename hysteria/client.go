@@ -7,7 +7,10 @@ import (
 	"net"
 	"os"
 	"runtime"
+	"strconv"
+	"strings"
 	"sync"
+	"time"
 
 	"github.com/sagernet/quic-go"
 	"github.com/sagernet/sing-quic"
@@ -28,6 +31,8 @@ type ClientOptions struct {
 	Logger        logger.Logger
 	BrutalDebug   bool
 	ServerAddress M.Socksaddr
+	ServerPorts   []string
+	HopInterval   time.Duration
 	SendBPS       uint64
 	ReceiveBPS    uint64
 	XPlusPassword string
@@ -48,6 +53,8 @@ type Client struct {
 	logger        logger.Logger
 	brutalDebug   bool
 	serverAddr    M.Socksaddr
+	serverPorts   []uint16
+	hopInterval   time.Duration
 	sendBPS       uint64
 	receiveBPS    uint64
 	xplusPassword string
@@ -95,12 +102,22 @@ func NewClient(options ClientOptions) (*Client, error) {
 	} else if options.ReceiveBPS < MinSpeedBPS {
 		return nil, E.New("invalid download speed")
 	}
+	var serverPorts []uint16
+	if len(options.ServerPorts) > 0 {
+		var err error
+		serverPorts, err = ParsePorts(options.ServerPorts)
+		if err != nil {
+			return nil, err
+		}
+	}
 	return &Client{
 		ctx:           options.Context,
 		dialer:        options.Dialer,
 		logger:        options.Logger,
 		brutalDebug:   options.BrutalDebug,
 		serverAddr:    options.ServerAddress,
+		serverPorts:   serverPorts,
+		hopInterval:   options.HopInterval,
 		sendBPS:       options.SendBPS,
 		receiveBPS:    options.ReceiveBPS,
 		xplusPassword: options.XPlusPassword,
@@ -109,6 +126,38 @@ func NewClient(options ClientOptions) (*Client, error) {
 		quicConfig:    quicConfig,
 		udpDisabled:   options.UDPDisabled,
 	}, nil
+}
+
+func ParsePorts(serverPorts []string) ([]uint16, error) {
+	var portList []uint16
+	for _, portRange := range serverPorts {
+		if !strings.Contains(portRange, ":") {
+			return nil, E.New("bad port range: ", portRange)
+		}
+		subIndex := strings.Index(portRange, ":")
+		var (
+			start, end uint64
+			err        error
+		)
+		if subIndex > 0 {
+			start, err = strconv.ParseUint(portRange[:subIndex], 10, 16)
+			if err != nil {
+				return nil, E.Cause(err, E.Cause(err, "bad port range: ", portRange))
+			}
+		}
+		if subIndex == len(portRange)-1 {
+			end = math.MaxUint16
+		} else {
+			end, err = strconv.ParseUint(portRange[subIndex+1:], 10, 16)
+			if err != nil {
+				return nil, E.Cause(err, E.Cause(err, "bad port range: ", portRange))
+			}
+		}
+		for i := start; i <= end; i++ {
+			portList = append(portList, uint16(i))
+		}
+	}
+	return portList, nil
 }
 
 func (c *Client) offer(ctx context.Context) (*clientQUICConnection, error) {
@@ -130,18 +179,33 @@ func (c *Client) offer(ctx context.Context) (*clientQUICConnection, error) {
 }
 
 func (c *Client) offerNew(ctx context.Context) (*clientQUICConnection, error) {
-	udpConn, err := c.dialer.DialContext(c.ctx, "udp", c.serverAddr)
+	dialFunc := func(serverAddr M.Socksaddr) (net.PacketConn, error) {
+		udpConn, err := c.dialer.DialContext(c.ctx, "udp", serverAddr)
+		if err != nil {
+			return nil, err
+		}
+		var packetConn net.PacketConn
+		packetConn = bufio.NewUnbindPacketConn(udpConn)
+		if c.xplusPassword != "" {
+			packetConn = NewXPlusPacketConn(packetConn, []byte(c.xplusPassword))
+		}
+		return packetConn, nil
+	}
+	var (
+		packetConn net.PacketConn
+		err        error
+	)
+	if len(c.serverPorts) == 0 {
+		packetConn, err = dialFunc(c.serverAddr)
+	} else {
+		packetConn, err = NewHopPacketConn(dialFunc, c.serverAddr, c.serverPorts, c.hopInterval)
+	}
 	if err != nil {
 		return nil, err
 	}
-	var packetConn net.PacketConn
-	packetConn = bufio.NewUnbindPacketConn(udpConn)
-	if c.xplusPassword != "" {
-		packetConn = NewXPlusPacketConn(packetConn, []byte(c.xplusPassword))
-	}
-	quicConn, err := qtls.Dial(c.ctx, packetConn, udpConn.RemoteAddr(), c.tlsConfig, c.quicConfig)
+	quicConn, err := qtls.Dial(c.ctx, packetConn, c.serverAddr, c.tlsConfig, c.quicConfig)
 	if err != nil {
-		udpConn.Close()
+		packetConn.Close()
 		return nil, err
 	}
 	controlStream, err := quicConn.OpenStreamSync(ctx)
@@ -170,7 +234,7 @@ func (c *Client) offerNew(ctx context.Context) (*clientQUICConnection, error) {
 	quicConn.SetCongestionControl(hyCC.NewBrutalSender(uint64(math.Min(float64(serverHello.RecvBPS), float64(c.sendBPS))), c.brutalDebug, c.logger))
 	conn := &clientQUICConnection{
 		quicConn:    quicConn,
-		rawConn:     udpConn,
+		rawConn:     packetConn,
 		connDone:    make(chan struct{}),
 		udpDisabled: !quicConn.ConnectionState().SupportsDatagrams,
 		udpConnMap:  make(map[uint32]*udpPacketConn),
