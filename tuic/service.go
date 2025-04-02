@@ -50,7 +50,7 @@ type Service[U comparable] struct {
 	tlsConfig         aTLS.ServerConfig
 	heartbeat         time.Duration
 	quicConfig        *quic.Config
-	userMap           map[[16]byte][]U       // 每个 UUID 对应多个用户
+	userMap           map[[16]byte][]U
 	passwordMap       map[U]string
 	congestionControl string
 	authTimeout       time.Duration
