@@ -50,7 +50,7 @@ type Service[U comparable] struct {
 	tlsConfig         aTLS.ServerConfig
 	heartbeat         time.Duration
 	quicConfig        *quic.Config
-	userMap           map[[16]byte]U
+	userMap           map[[16]byte][]U
 	passwordMap       map[U]string
 	congestionControl string
 	authTimeout       time.Duration
@@ -87,7 +87,7 @@ func NewService[U comparable](options ServiceOptions) (*Service[U], error) {
 		tlsConfig:         options.TLSConfig,
 		heartbeat:         options.Heartbeat,
 		quicConfig:        quicConfig,
-		userMap:           make(map[[16]byte]U),
+		userMap:           make(map[[16]byte][]U),
 		congestionControl: options.CongestionControl,
 		authTimeout:       options.AuthTimeout,
 		udpTimeout:        options.UDPTimeout,
@@ -96,14 +96,14 @@ func NewService[U comparable](options ServiceOptions) (*Service[U], error) {
 }
 
 func (s *Service[U]) UpdateUsers(userList []U, uuidList [][16]byte, passwordList []string) {
-	userMap := make(map[[16]byte]U)
-	passwordMap := make(map[U]string)
-	for index := range userList {
-		userMap[uuidList[index]] = userList[index]
-		passwordMap[userList[index]] = passwordList[index]
-	}
-	s.userMap = userMap
-	s.passwordMap = passwordMap
+    userMap := make(map[[16]byte][]U)
+    passwordMap := make(map[U]string)
+    for index := range userList {
+        userMap[uuidList[index]] = append(userMap[uuidList[index]], userList[index])
+        passwordMap[userList[index]] = passwordList[index]
+    }
+    s.userMap = userMap
+    s.passwordMap = passwordMap
 }
 
 func (s *Service[U]) Start(conn net.PacketConn) error {
@@ -245,19 +245,31 @@ func (s *serverSession[U]) handleUniStream(stream quic.ReceiveStream) error {
 		}
 		var userUUID [16]byte
 		copy(userUUID[:], buffer.Range(2, 2+16))
-		user, loaded := s.userMap[userUUID]
+		users, loaded := s.userMap[userUUID]
 		if !loaded {
 			return E.New("authentication: unknown user ", uuid.UUID(userUUID))
 		}
-		handshakeState := s.quicConn.ConnectionState()
-		tuicToken, err := handshakeState.ExportKeyingMaterial(string(userUUID[:]), []byte(s.passwordMap[user]), 32)
-		if err != nil {
-			return E.Cause(err, "authentication: export keying material")
+
+		var authenticatedUser U
+		found := false
+		for _, user := range users {
+			handshakeState := s.quicConn.ConnectionState()
+			tuicToken, err := handshakeState.ExportKeyingMaterial(string(userUUID[:]), []byte(s.passwordMap[user]), 32)
+			if err != nil {
+				continue
+			}
+			if bytes.Equal(tuicToken, buffer.Range(2+16, 2+16+32)) {
+				authenticatedUser = user
+				found = true
+				break
+			}
 		}
-		if !bytes.Equal(tuicToken, buffer.Range(2+16, 2+16+32)) {
+
+		if !found {
 			return E.New("authentication: token mismatch")
 		}
-		s.authUser = user
+
+		s.authUser = authenticatedUser
 		close(s.authDone)
 		return nil
 	case CommandPacket:
