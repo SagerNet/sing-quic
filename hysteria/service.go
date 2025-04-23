@@ -200,7 +200,7 @@ func (s *serverSession[U]) handleConnection() {
 			OK:      false,
 			Message: "Wrong password",
 		})
-		s.closeWithError0(ErrorCodeAuthError, E.Cause(err, "authentication failed, auth_str=", clientHello.Auth))
+		s.closeWithError0(ErrorCodeAuthError, E.New("authentication failed, auth_str=", clientHello.Auth))
 		return
 	}
 	err = WriteServerHello(controlStream, ServerHello{
