@@ -248,7 +248,7 @@ func (s *serverSession[U]) handleUniStream(stream quic.ReceiveStream) error {
 			return E.New("authentication: unknown user ", uuid.UUID(userUUID))
 		}
 		handshakeState := s.quicConn.ConnectionState()
-		tuicToken, err := handshakeState.ExportKeyingMaterial(string(userUUID[:]), []byte(s.passwordMap[user]), 32)
+		tuicToken, err := handshakeState.TLS.ExportKeyingMaterial(string(userUUID[:]), []byte(s.passwordMap[user]), 32)
 		if err != nil {
 			return E.Cause(err, "authentication: export keying material")
 		}
