@@ -245,6 +245,7 @@ func (s *serverSession[U]) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+//nolint:staticcheck
 func (s *serverSession[U]) handleStream0(frameType http3.FrameType, id quic.ConnectionTracingID, stream quic.Stream, err error) (bool, error) {
 	if !s.authenticated || err != nil {
 		return false, nil
