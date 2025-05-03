@@ -143,7 +143,7 @@ func (c *Client) clientHandshake(conn quic.Connection) error {
 	}
 	defer authStream.Close()
 	handshakeState := conn.ConnectionState()
-	tuicAuthToken, err := handshakeState.ExportKeyingMaterial(string(c.uuid[:]), []byte(c.password), 32)
+	tuicAuthToken, err := handshakeState.TLS.ExportKeyingMaterial(string(c.uuid[:]), []byte(c.password), 32)
 	if err != nil {
 		return E.Cause(err, "export keying material")
 	}
