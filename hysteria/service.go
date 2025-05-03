@@ -159,7 +159,6 @@ func (s *Service[U]) loopConnections(listener qtls.Listener) {
 			Service:    s,
 			ctx:        s.ctx,
 			quicConn:   connection,
-			source:     M.SocksaddrFromNet(connection.RemoteAddr()).Unwrap(),
 			connDone:   make(chan struct{}),
 			udpConnMap: make(map[uint32]*udpPacketConn),
 		}
@@ -171,7 +170,6 @@ type serverSession[U comparable] struct {
 	*Service[U]
 	ctx          context.Context
 	quicConn     quic.Connection
-	source       M.Socksaddr
 	connAccess   sync.Mutex
 	connDone     chan struct{}
 	connErr      error
@@ -244,7 +242,7 @@ func (s *serverSession[U]) handleStream(stream quic.Stream) error {
 	}
 	ctx := auth.ContextWithUser(s.ctx, s.authUser)
 	if !request.UDP {
-		s.handler.NewConnectionEx(ctx, &serverConn{Stream: stream}, s.source, M.ParseSocksaddrHostPort(request.Host, request.Port), nil)
+		s.handler.NewConnectionEx(ctx, &serverConn{Stream: stream}, M.SocksaddrFromNet(s.quicConn.RemoteAddr()).Unwrap(), M.ParseSocksaddrHostPort(request.Host, request.Port), nil)
 	} else {
 		if s.udpDisabled {
 			return WriteServerResponse(stream, ServerResponse{
@@ -275,7 +273,7 @@ func (s *serverSession[U]) handleStream(stream quic.Stream) error {
 			return err
 		}
 		newCtx, newConn := canceler.NewPacketConn(udpConn.ctx, udpConn, s.udpTimeout)
-		go s.handler.NewPacketConnectionEx(newCtx, newConn, s.source, M.ParseSocksaddrHostPort(request.Host, request.Port), nil)
+		go s.handler.NewPacketConnectionEx(newCtx, newConn, M.SocksaddrFromNet(s.quicConn.RemoteAddr()).Unwrap(), M.ParseSocksaddrHostPort(request.Host, request.Port), nil)
 		holdBuffer := make([]byte, 1024)
 		for {
 			_, hErr := stream.Read(holdBuffer)

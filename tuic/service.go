@@ -163,7 +163,6 @@ func (s *Service[U]) handleConnection(connection quic.Connection) {
 		Service:    s,
 		ctx:        s.ctx,
 		quicConn:   connection,
-		source:     M.SocksaddrFromNet(connection.RemoteAddr()).Unwrap(),
 		connDone:   make(chan struct{}),
 		authDone:   make(chan struct{}),
 		udpConnMap: make(map[uint16]*udpPacketConn),
@@ -175,7 +174,6 @@ type serverSession[U comparable] struct {
 	*Service[U]
 	ctx        context.Context
 	quicConn   quic.Connection
-	source     M.Socksaddr
 	connAccess sync.Mutex
 	connDone   chan struct{}
 	connErr    error
@@ -362,7 +360,7 @@ func (s *serverSession[U]) handleStream(stream quic.Stream) error {
 	} else {
 		conn = bufio.NewCachedConn(conn, buffer)
 	}
-	s.handler.NewConnectionEx(auth.ContextWithUser(s.ctx, s.authUser), conn, s.source, destination, nil)
+	s.handler.NewConnectionEx(auth.ContextWithUser(s.ctx, s.authUser), conn, M.SocksaddrFromNet(s.quicConn.RemoteAddr()).Unwrap(), destination, nil)
 	return nil
 }
 
