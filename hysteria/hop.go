@@ -52,7 +52,7 @@ func NewHopPacketConn(
 		ports:       ports,
 		interval:    interval,
 		packetChan:  make(chan *buf.Buffer, packetQueueSize),
-		errChan:     make(chan error),
+		errChan:     make(chan error, 1),
 		doneChan:    make(chan struct{}),
 	}
 	currentConn, err := dialFunc(hopConn.nextAddr())
