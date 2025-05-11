@@ -77,6 +77,7 @@ func NewService[U comparable](options ServiceOptions) (*Service[U], error) {
 		MaxConnectionReceiveWindow:     DefaultConnReceiveWindow,
 		MaxIdleTimeout:                 DefaultMaxIdleTimeout,
 		KeepAlivePeriod:                DefaultKeepAlivePeriod,
+		DisablePathManager:             true,
 	}
 	if options.StreamReceiveWindow != 0 {
 		quicConfig.InitialStreamReceiveWindow = options.StreamReceiveWindow
