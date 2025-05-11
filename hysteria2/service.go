@@ -80,6 +80,7 @@ func NewService[U comparable](options ServiceOptions) (*Service[U], error) {
 		MaxConnectionReceiveWindow:     hysteria.DefaultConnReceiveWindow,
 		MaxIdleTimeout:                 hysteria.DefaultMaxIdleTimeout,
 		KeepAlivePeriod:                hysteria.DefaultKeepAlivePeriod,
+		DisablePathManager:             true,
 	}
 	if options.MasqueradeHandler == nil {
 		options.MasqueradeHandler = http.NotFoundHandler()

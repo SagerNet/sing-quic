@@ -4,7 +4,7 @@ go 1.23.0
 
 require (
 	github.com/gofrs/uuid/v5 v5.3.2
-	github.com/sagernet/quic-go v0.51.0-beta.1
+	github.com/sagernet/quic-go v0.51.0-beta.5
 	github.com/sagernet/sing v0.6.7
 	golang.org/x/crypto v0.37.0
 	golang.org/x/exp v0.0.0-20240506185415-9bf2ced13842
