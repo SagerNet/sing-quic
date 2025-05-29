@@ -3,14 +3,11 @@ package hysteria2
 import (
 	"context"
 	"io"
-	"math"
 	"net"
 	"net/http"
 	"net/url"
 	"os"
 	"runtime"
-	"strconv"
-	"strings"
 	"sync"
 	"time"
 
@@ -86,7 +83,7 @@ func NewClient(options ClientOptions) (*Client, error) {
 	var serverPorts []uint16
 	if len(options.ServerPorts) > 0 {
 		var err error
-		serverPorts, err = parsePorts(options.ServerPorts)
+		serverPorts, err = hysteria.ParsePorts(options.ServerPorts)
 		if err != nil {
 			return nil, err
 		}
@@ -107,38 +104,6 @@ func NewClient(options ClientOptions) (*Client, error) {
 		quicConfig:         quicConfig,
 		udpDisabled:        options.UDPDisabled,
 	}, nil
-}
-
-func parsePorts(serverPorts []string) ([]uint16, error) {
-	var portList []uint16
-	for _, portRange := range serverPorts {
-		if !strings.Contains(portRange, ":") {
-			return nil, E.New("bad port range: ", portRange)
-		}
-		subIndex := strings.Index(portRange, ":")
-		var (
-			start, end uint64
-			err        error
-		)
-		if subIndex > 0 {
-			start, err = strconv.ParseUint(portRange[:subIndex], 10, 16)
-			if err != nil {
-				return nil, E.Cause(err, E.Cause(err, "bad port range: ", portRange))
-			}
-		}
-		if subIndex == len(portRange)-1 {
-			end = math.MaxUint16
-		} else {
-			end, err = strconv.ParseUint(portRange[subIndex+1:], 10, 16)
-			if err != nil {
-				return nil, E.Cause(err, E.Cause(err, "bad port range: ", portRange))
-			}
-		}
-		for i := start; i <= end; i++ {
-			portList = append(portList, uint16(i))
-		}
-	}
-	return portList, nil
 }
 
 func (c *Client) offer(ctx context.Context) (*clientQUICConnection, error) {
@@ -179,7 +144,7 @@ func (c *Client) offerNew(ctx context.Context) (*clientQUICConnection, error) {
 	if len(c.serverPorts) == 0 {
 		packetConn, err = dialFunc(c.serverAddr)
 	} else {
-		packetConn, err = NewHopPacketConn(dialFunc, c.serverAddr, c.serverPorts, c.hopInterval)
+		packetConn, err = hysteria.NewHopPacketConn(dialFunc, c.serverAddr, c.serverPorts, c.hopInterval)
 	}
 	if err != nil {
 		return nil, err
@@ -208,6 +173,7 @@ func (c *Client) offerNew(ctx context.Context) (*clientQUICConnection, error) {
 		packetConn.Close()
 		return nil, err
 	}
+	response.Body.Close()
 	if response.StatusCode != protocol.StatusAuthOK {
 		if quicConn != nil {
 			quicConn.CloseWithError(0, "")
@@ -215,7 +181,6 @@ func (c *Client) offerNew(ctx context.Context) (*clientQUICConnection, error) {
 		packetConn.Close()
 		return nil, E.New("authentication failed, status code: ", response.StatusCode)
 	}
-	response.Body.Close()
 	authResponse := protocol.AuthResponseFromHeader(response.Header)
 	actualTx := authResponse.Rx
 	if actualTx == 0 || actualTx > c.sendBPS {
