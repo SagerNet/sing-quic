@@ -357,10 +357,8 @@ func (s *serverSession[U]) handleStream(stream quic.Stream) error {
 		Stream:      stream,
 		destination: destination,
 	}
-	if buffer.IsEmpty() {
-		buffer.Release()
-	} else {
-		conn = bufio.NewCachedConn(conn, buffer)
+	if !buffer.IsEmpty() {
+		conn = bufio.NewCachedConn(conn, buffer.ToOwned())
 	}
 	s.handler.NewConnectionEx(auth.ContextWithUser(s.ctx, s.authUser), conn, s.source, destination, nil)
 	return nil
