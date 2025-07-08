@@ -143,7 +143,7 @@ func WriteTCPResponse(ok bool, msg string, payload []byte) *buf.Buffer {
 	} else {
 		buffer.WriteByte(1)
 	}
-	WriteVString(buffer, msg)
+	WriteVString(buffer, msg[:msgLen])
 	WriteUVariant(buffer, uint64(paddingLen))
 	buffer.Extend(paddingLen)
 	buffer.Write(payload)
