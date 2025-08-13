@@ -46,7 +46,7 @@ type Client struct {
 	zeroRTTHandshake  bool
 	heartbeat         time.Duration
 
-	connAccess sync.RWMutex
+	connAccess sync.Mutex
 	conn       *clientQUICConnection
 }
 
