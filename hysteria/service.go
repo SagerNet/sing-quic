@@ -243,7 +243,7 @@ func (s *serverSession[U]) handleStream(stream quic.Stream) error {
 	}
 	ctx := auth.ContextWithUser(s.ctx, s.authUser)
 	if !request.UDP {
-		s.handler.NewConnectionEx(ctx, &serverConn{Stream: stream}, M.SocksaddrFromNet(s.quicConn.RemoteAddr()).Unwrap(), M.ParseSocksaddrHostPort(request.Host, request.Port), nil)
+		s.handler.NewConnectionEx(ctx, &serverConn{Stream: stream}, M.SocksaddrFromNet(s.quicConn.RemoteAddr()).Unwrap(), M.ParseSocksaddrHostPort(request.Host, request.Port).Unwrap(), nil)
 	} else {
 		if s.udpDisabled {
 			return WriteServerResponse(stream, ServerResponse{
@@ -274,7 +274,7 @@ func (s *serverSession[U]) handleStream(stream quic.Stream) error {
 			return err
 		}
 		newCtx, newConn := canceler.NewPacketConn(udpConn.ctx, udpConn, s.udpTimeout)
-		go s.handler.NewPacketConnectionEx(newCtx, newConn, M.SocksaddrFromNet(s.quicConn.RemoteAddr()).Unwrap(), M.ParseSocksaddrHostPort(request.Host, request.Port), nil)
+		go s.handler.NewPacketConnectionEx(newCtx, newConn, M.SocksaddrFromNet(s.quicConn.RemoteAddr()).Unwrap(), M.ParseSocksaddrHostPort(request.Host, request.Port).Unwrap(), nil)
 		holdBuffer := make([]byte, 1024)
 		for {
 			_, hErr := stream.Read(holdBuffer)

@@ -10,13 +10,13 @@ import (
 	"net"
 	"os"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/sagernet/quic-go"
 	"github.com/sagernet/quic-go/quicvarint"
 	"github.com/sagernet/sing-quic/hysteria2/internal/protocol"
 	"github.com/sagernet/sing/common"
-	"github.com/sagernet/sing/common/atomic"
 	"github.com/sagernet/sing/common/buf"
 	"github.com/sagernet/sing/common/cache"
 	M "github.com/sagernet/sing/common/metadata"
@@ -148,7 +148,7 @@ func (c *udpPacketConn) ReadPacket(buffer *buf.Buffer) (destination M.Socksaddr,
 	select {
 	case p := <-c.data:
 		_, err = buffer.ReadOnceFrom(p.data)
-		destination = M.ParseSocksaddr(p.destination)
+		destination = M.ParseSocksaddr(p.destination).Unwrap()
 		p.releaseMessage()
 		return
 	case <-c.ctx.Done():
@@ -162,7 +162,7 @@ func (c *udpPacketConn) ReadFrom(p []byte) (n int, addr net.Addr, err error) {
 	select {
 	case pkt := <-c.data:
 		n = copy(p, pkt.data.Bytes())
-		destination := M.ParseSocksaddr(pkt.destination)
+		destination := M.ParseSocksaddr(pkt.destination).Unwrap()
 		if destination.IsFqdn() {
 			addr = destination
 		} else {

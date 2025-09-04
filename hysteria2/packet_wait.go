@@ -17,7 +17,7 @@ func (c *udpPacketConn) InitializeReadWaiter(options N.ReadWaitOptions) (needCop
 func (c *udpPacketConn) WaitReadPacket() (buffer *buf.Buffer, destination M.Socksaddr, err error) {
 	select {
 	case p := <-c.data:
-		destination = M.ParseSocksaddr(p.destination)
+		destination = M.ParseSocksaddr(p.destination).Unwrap()
 		if c.readWaitOptions.NeedHeadroom() {
 			buffer = c.readWaitOptions.NewPacketBuffer()
 			_, err = buffer.Write(p.data.Bytes())
