@@ -40,7 +40,7 @@ func Dial(ctx context.Context, conn net.PacketConn, addr net.Addr, config aTLS.C
 	if quicTLSConfig, isQUICConfig := config.(Config); isQUICConfig {
 		return quicTLSConfig.Dial(ctx, conn, addr, quicConfig)
 	}
-	tlsConfig, err := config.Config()
+	tlsConfig, err := config.STDConfig()
 	if err != nil {
 		return nil, err
 	}
@@ -51,7 +51,7 @@ func DialEarly(ctx context.Context, conn net.PacketConn, addr net.Addr, config a
 	if quicTLSConfig, isQUICConfig := config.(Config); isQUICConfig {
 		return quicTLSConfig.DialEarly(ctx, conn, addr, quicConfig)
 	}
-	tlsConfig, err := config.Config()
+	tlsConfig, err := config.STDConfig()
 	if err != nil {
 		return nil, err
 	}
@@ -62,7 +62,7 @@ func CreateTransport(conn net.PacketConn, quicConnPtr *quic.EarlyConnection, ser
 	if quicTLSConfig, isQUICConfig := config.(Config); isQUICConfig {
 		return quicTLSConfig.CreateTransport(conn, quicConnPtr, serverAddr, quicConfig), nil
 	}
-	tlsConfig, err := config.Config()
+	tlsConfig, err := config.STDConfig()
 	if err != nil {
 		return nil, err
 	}
@@ -84,7 +84,7 @@ func Listen(conn net.PacketConn, config aTLS.ServerConfig, quicConfig *quic.Conf
 	if quicTLSConfig, isQUICConfig := config.(ServerConfig); isQUICConfig {
 		return quicTLSConfig.Listen(conn, quicConfig)
 	}
-	tlsConfig, err := config.Config()
+	tlsConfig, err := config.STDConfig()
 	if err != nil {
 		return nil, err
 	}
@@ -95,7 +95,7 @@ func ListenEarly(conn net.PacketConn, config aTLS.ServerConfig, quicConfig *quic
 	if quicTLSConfig, isQUICConfig := config.(ServerConfig); isQUICConfig {
 		return quicTLSConfig.ListenEarly(conn, quicConfig)
 	}
-	tlsConfig, err := config.Config()
+	tlsConfig, err := config.STDConfig()
 	if err != nil {
 		return nil, err
 	}
@@ -110,7 +110,7 @@ func ConfigureHTTP3(config aTLS.ServerConfig) error {
 		quicTLSConfig.ConfigureHTTP3()
 		return nil
 	}
-	tlsConfig, err := config.Config()
+	tlsConfig, err := config.STDConfig()
 	if err != nil {
 		return err
 	}
