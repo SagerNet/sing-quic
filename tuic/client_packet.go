@@ -65,7 +65,7 @@ func (c *Client) loopUniStreams(conn *clientQUICConnection) {
 	}
 }
 
-func (c *Client) handleUniStream(conn *clientQUICConnection, stream quic.ReceiveStream) error {
+func (c *Client) handleUniStream(conn *clientQUICConnection, stream *quic.ReceiveStream) error {
 	defer stream.CancelRead(0)
 	buffer := buf.NewPacket()
 	defer buffer.Release()

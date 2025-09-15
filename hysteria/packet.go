@@ -122,7 +122,7 @@ type udpPacketConn struct {
 	ctx             context.Context
 	cancel          common.ContextCancelCauseFunc
 	sessionID       uint32
-	quicConn        quic.Connection
+	quicConn        *quic.Conn
 	data            chan *udpMessage
 	udpMTU          int
 	packetId        atomic.Uint32
@@ -133,7 +133,7 @@ type udpPacketConn struct {
 	readDeadline    pipe.Deadline
 }
 
-func newUDPPacketConn(ctx context.Context, quicConn quic.Connection, onDestroy func()) *udpPacketConn {
+func newUDPPacketConn(ctx context.Context, quicConn *quic.Conn, onDestroy func()) *udpPacketConn {
 	ctx, cancel := common.ContextWithCancelCause(ctx)
 	return &udpPacketConn{
 		ctx:          ctx,

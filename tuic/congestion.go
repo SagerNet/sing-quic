@@ -11,7 +11,7 @@ import (
 	"github.com/sagernet/sing/common/ntp"
 )
 
-func setCongestion(ctx context.Context, connection quic.Connection, congestionName string) {
+func setCongestion(ctx context.Context, connection *quic.Conn, congestionName string) {
 	timeFunc := ntp.TimeFuncFromContext(ctx)
 	if timeFunc == nil {
 		timeFunc = time.Now

@@ -232,7 +232,7 @@ func ReadServerResponse(stream io.Reader) (*ServerResponse, error) {
 	return &serverResponse, nil
 }
 
-func WriteServerResponse(stream quic.Stream, response ServerResponse) error {
+func WriteServerResponse(stream *quic.Stream, response ServerResponse) error {
 	var responseLen int
 	responseLen += 1 // ok
 	responseLen += 4 // udp session id

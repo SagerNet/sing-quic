@@ -170,7 +170,7 @@ func (s *Service[U]) loopConnections(listener qtls.Listener) {
 type serverSession[U comparable] struct {
 	*Service[U]
 	ctx          context.Context
-	quicConn     quic.Connection
+	quicConn     *quic.Conn
 	connAccess   sync.Mutex
 	connDone     chan struct{}
 	connErr      error
@@ -236,7 +236,7 @@ func (s *serverSession[U]) loopStreams() {
 	}
 }
 
-func (s *serverSession[U]) handleStream(stream quic.Stream) error {
+func (s *serverSession[U]) handleStream(stream *quic.Stream) error {
 	request, err := ReadClientRequest(stream)
 	if err != nil {
 		return E.New("read TCP request")
@@ -317,7 +317,7 @@ func (s *serverSession[U]) closeWithError0(errorCode int, err error) {
 }
 
 type serverConn struct {
-	quic.Stream
+	*quic.Stream
 	responseWritten bool
 }
 

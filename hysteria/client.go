@@ -333,7 +333,7 @@ func (c *Client) CloseWithError(err error) error {
 }
 
 type clientQUICConnection struct {
-	quicConn    quic.Connection
+	quicConn    *quic.Conn
 	rawConn     io.Closer
 	closeOnce   sync.Once
 	connDone    chan struct{}
@@ -367,7 +367,7 @@ func (c *clientQUICConnection) closeWithError(err error) {
 }
 
 type clientConn struct {
-	quic.Stream
+	*quic.Stream
 	destination    M.Socksaddr
 	requestWritten bool
 	responseRead   bool

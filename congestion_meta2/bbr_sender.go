@@ -28,7 +28,7 @@ const (
 	// Constants based on TCP defaults.
 	// The minimum CWND to ensure delayed acks don't reduce bandwidth measurements.
 	// Does not inflate the pacing rate.
-	defaultMinimumCongestionWindow = 4 * congestion.ByteCount(congestion.InitialPacketSizeIPv4)
+	defaultMinimumCongestionWindow = 4 * congestion.ByteCount(congestion.InitialPacketSize)
 
 	// The gain used for the STARTUP, equal to 2/ln(2).
 	defaultHighGain = 2.885
