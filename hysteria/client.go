@@ -142,7 +142,7 @@ func ParsePorts(serverPorts []string) ([]uint16, error) {
 		if subIndex > 0 {
 			start, err = strconv.ParseUint(portRange[:subIndex], 10, 16)
 			if err != nil {
-				return nil, E.Cause(err, E.Cause(err, "bad port range: ", portRange))
+				return nil, E.Cause(err, "bad port range: ", portRange)
 			}
 		}
 		if subIndex == len(portRange)-1 {
@@ -150,7 +150,7 @@ func ParsePorts(serverPorts []string) ([]uint16, error) {
 		} else {
 			end, err = strconv.ParseUint(portRange[subIndex+1:], 10, 16)
 			if err != nil {
-				return nil, E.Cause(err, E.Cause(err, "bad port range: ", portRange))
+				return nil, E.Cause(err, "bad port range: ", portRange)
 			}
 		}
 		for i := start; i <= end; i++ {
