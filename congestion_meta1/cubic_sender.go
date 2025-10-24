@@ -2,10 +2,10 @@ package congestion
 
 import (
 	"fmt"
-	"time"
 
 	"github.com/sagernet/quic-go/congestion"
 	"github.com/sagernet/quic-go/logging"
+	"github.com/sagernet/quic-go/monotime"
 )
 
 const (
@@ -115,11 +115,11 @@ func (c *cubicSender) SetRTTStatsProvider(provider congestion.RTTStatsProvider) 
 }
 
 // TimeUntilSend returns when the next packet should be sent.
-func (c *cubicSender) TimeUntilSend(_ congestion.ByteCount) time.Time {
+func (c *cubicSender) TimeUntilSend(_ congestion.ByteCount) monotime.Time {
 	return c.pacer.TimeUntilSend()
 }
 
-func (c *cubicSender) HasPacingBudget(now time.Time) bool {
+func (c *cubicSender) HasPacingBudget(now monotime.Time) bool {
 	return c.pacer.Budget(now) >= c.maxDatagramSize
 }
 
@@ -132,7 +132,7 @@ func (c *cubicSender) minCongestionWindow() congestion.ByteCount {
 }
 
 func (c *cubicSender) OnPacketSent(
-	sentTime time.Time,
+	sentTime monotime.Time,
 	_ congestion.ByteCount,
 	packetNumber congestion.PacketNumber,
 	bytes congestion.ByteCount,
@@ -175,7 +175,7 @@ func (c *cubicSender) OnPacketAcked(
 	ackedPacketNumber congestion.PacketNumber,
 	ackedBytes congestion.ByteCount,
 	priorInFlight congestion.ByteCount,
-	eventTime time.Time,
+	eventTime monotime.Time,
 ) {
 	c.largestAckedPacketNumber = Max(ackedPacketNumber, c.largestAckedPacketNumber)
 	if c.InRecovery() {
@@ -217,7 +217,7 @@ func (c *cubicSender) maybeIncreaseCwnd(
 	_ congestion.PacketNumber,
 	ackedBytes congestion.ByteCount,
 	priorInFlight congestion.ByteCount,
-	eventTime time.Time,
+	eventTime monotime.Time,
 ) {
 	// Do not increase the congestion window unless the sender is close to using
 	// the current window.

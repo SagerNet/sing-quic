@@ -1,6 +1,8 @@
 package congestion
 
-import "time"
+import (
+	"time"
+)
 
 // A Clock returns the current time
 type Clock interface {

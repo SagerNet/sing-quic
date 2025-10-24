@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/sagernet/quic-go/congestion"
+	"github.com/sagernet/quic-go/monotime"
 	"github.com/sagernet/sing/common/logger"
 )
 
@@ -18,7 +19,7 @@ const (
 	debugPrintInterval         = 2
 )
 
-var _ congestion.CongestionControlEx = &BrutalSender{}
+var _ congestion.CongestionControl = &BrutalSender{}
 
 type BrutalSender struct {
 	rttStats        congestion.RTTStatsProvider
@@ -57,11 +58,11 @@ func (b *BrutalSender) SetRTTStatsProvider(rttStats congestion.RTTStatsProvider)
 	b.rttStats = rttStats
 }
 
-func (b *BrutalSender) TimeUntilSend(bytesInFlight congestion.ByteCount) time.Time {
+func (b *BrutalSender) TimeUntilSend(bytesInFlight congestion.ByteCount) monotime.Time {
 	return b.pacer.TimeUntilSend()
 }
 
-func (b *BrutalSender) HasPacingBudget(now time.Time) bool {
+func (b *BrutalSender) HasPacingBudget(now monotime.Time) bool {
 	return b.pacer.Budget(now) >= b.maxDatagramSize
 }
 
@@ -77,14 +78,14 @@ func (b *BrutalSender) GetCongestionWindow() congestion.ByteCount {
 	return congestion.ByteCount(float64(b.bps) * rtt.Seconds() * congestionWindowMultiplier / b.ackRate)
 }
 
-func (b *BrutalSender) OnPacketSent(sentTime time.Time, bytesInFlight congestion.ByteCount,
+func (b *BrutalSender) OnPacketSent(sentTime monotime.Time, bytesInFlight congestion.ByteCount,
 	packetNumber congestion.PacketNumber, bytes congestion.ByteCount, isRetransmittable bool,
 ) {
 	b.pacer.SentPacket(sentTime, bytes)
 }
 
 func (b *BrutalSender) OnPacketAcked(number congestion.PacketNumber, ackedBytes congestion.ByteCount,
-	priorInFlight congestion.ByteCount, eventTime time.Time,
+	priorInFlight congestion.ByteCount, eventTime monotime.Time,
 ) {
 	// Stub
 }

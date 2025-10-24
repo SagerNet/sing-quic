@@ -4,6 +4,8 @@ import (
 	"math"
 	"time"
 
+	"github.com/sagernet/quic-go/monotime"
+
 	"golang.org/x/exp/constraints"
 )
 
@@ -44,16 +46,16 @@ func AbsDuration(d time.Duration) time.Duration {
 }
 
 // MinTime returns the earlier time
-func MinTime(a, b time.Time) time.Time {
+func MinTime(a, b monotime.Time) monotime.Time {
 	if a.After(b) {
 		return b
 	}
 	return a
 }
 
-// MinNonZeroTime returns the earlist time that is not time.Time{}
-// If both a and b are time.Time{}, it returns time.Time{}
-func MinNonZeroTime(a, b time.Time) time.Time {
+// MinNonZeroTime returns the earlist time that is notmonotime.Time(0)
+// If both a and b aremonotime.Time(0), it returnsmonotime.Time(0)
+func MinNonZeroTime(a, b monotime.Time) monotime.Time {
 	if a.IsZero() {
 		return b
 	}
@@ -64,7 +66,7 @@ func MinNonZeroTime(a, b time.Time) time.Time {
 }
 
 // MaxTime returns the later time
-func MaxTime(a, b time.Time) time.Time {
+func MaxTime(a, b monotime.Time) monotime.Time {
 	if a.After(b) {
 		return a
 	}
