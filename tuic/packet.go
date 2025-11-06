@@ -83,7 +83,7 @@ func (m *udpMessage) pack() *buf.Buffer {
 }
 
 func (m *udpMessage) headerSize() int {
-	return 10 + AddressSerializer.AddrPortLen(m.destination)
+	return 12 + AddressSerializer.AddrPortLen(m.destination)
 }
 
 func fragUDPMessage(message *udpMessage, maxPacketSize int) []*udpMessage {

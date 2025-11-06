@@ -15,6 +15,7 @@ import (
 	"github.com/sagernet/sing/common/buf"
 	"github.com/sagernet/sing/common/bufio"
 	E "github.com/sagernet/sing/common/exceptions"
+	"github.com/sagernet/sing/common/logger"
 	M "github.com/sagernet/sing/common/metadata"
 	N "github.com/sagernet/sing/common/network"
 	aTLS "github.com/sagernet/sing/common/tls"
@@ -23,6 +24,7 @@ import (
 type ClientOptions struct {
 	Context           context.Context
 	Dialer            N.Dialer
+	Logger            logger.Logger
 	ServerAddress     M.Socksaddr
 	TLSConfig         aTLS.Config
 	UUID              [16]byte
@@ -36,6 +38,7 @@ type ClientOptions struct {
 type Client struct {
 	ctx               context.Context
 	dialer            N.Dialer
+	logger            logger.Logger
 	serverAddr        M.Socksaddr
 	tlsConfig         aTLS.Config
 	quicConfig        *quic.Config
@@ -69,6 +72,7 @@ func NewClient(options ClientOptions) (*Client, error) {
 	return &Client{
 		ctx:               options.Context,
 		dialer:            options.Dialer,
+		logger:            options.Logger,
 		serverAddr:        options.ServerAddress,
 		tlsConfig:         options.TLSConfig,
 		quicConfig:        quicConfig,
@@ -125,8 +129,9 @@ func (c *Client) offerNew(ctx context.Context) (*clientQUICConnection, error) {
 	}()
 	if c.udpStream {
 		go c.loopUniStreams(conn)
+	} else {
+		go c.loopMessages(conn)
 	}
-	go c.loopMessages(conn)
 	go c.loopHeartbeats(conn)
 	c.conn = conn
 	return conn, nil
