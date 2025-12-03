@@ -23,7 +23,6 @@ func setCongestion(ctx context.Context, connection *quic.Conn, congestionName st
 				congestion_meta1.DefaultClock{TimeFunc: timeFunc},
 				congestion.ByteCount(connection.Config().InitialPacketSize),
 				false,
-				nil,
 			),
 		)
 	case "new_reno":
@@ -32,7 +31,6 @@ func setCongestion(ctx context.Context, connection *quic.Conn, congestionName st
 				congestion_meta1.DefaultClock{TimeFunc: timeFunc},
 				congestion.ByteCount(connection.Config().InitialPacketSize),
 				true,
-				nil,
 			),
 		)
 	case "bbr_meta_v1":
