@@ -929,3 +929,17 @@ func (b *bbrSender) shouldExitStartupDueToLoss(lastPacketSendState *sendTimeStat
 func bdpFromRttAndBandwidth(rtt time.Duration, bandwidth Bandwidth) congestion.ByteCount {
 	return congestion.ByteCount(rtt) * congestion.ByteCount(bandwidth) / congestion.ByteCount(BytesPerSecond) / congestion.ByteCount(time.Second)
 }
+
+// OnPacketsLost is called to notify the congestion controller about the lowest unacked packet number.
+// This allows cleanup of obsolete packet state data.
+func (b *bbrSender) OnPacketsLost(leastUnacked congestion.PacketNumber) {
+	b.sampler.RemoveObsoletePackets(leastUnacked)
+}
+
+// OnAppLimited is called when the application has no data to send but cwnd is not fully utilized.
+func (b *bbrSender) OnAppLimited(bytesInFlight congestion.ByteCount) {
+	if bytesInFlight >= b.GetCongestionWindow() {
+		return
+	}
+	b.sampler.OnAppLimited()
+}

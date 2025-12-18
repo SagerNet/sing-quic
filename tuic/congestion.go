@@ -6,6 +6,8 @@ import (
 
 	"github.com/sagernet/quic-go"
 	"github.com/sagernet/quic-go/congestion"
+	"github.com/sagernet/sing-quic/congestion_bbr1"
+	"github.com/sagernet/sing-quic/congestion_bbr2"
 	congestion_meta1 "github.com/sagernet/sing-quic/congestion_meta1"
 	congestion_meta2 "github.com/sagernet/sing-quic/congestion_meta2"
 	"github.com/sagernet/sing/common/ntp"
@@ -45,6 +47,27 @@ func setCongestion(ctx context.Context, connection *quic.Conn, congestionName st
 			congestion_meta2.DefaultClock{TimeFunc: timeFunc},
 			congestion.ByteCount(connection.Config().InitialPacketSize),
 			congestion.ByteCount(congestion_meta1.InitialCongestionWindow),
+		))
+	case "bbr_quiche":
+		connection.SetCongestionControl(congestion_bbr1.NewBbrSender(
+			congestion_bbr1.DefaultClock{TimeFunc: timeFunc},
+			congestion.ByteCount(connection.Config().InitialPacketSize),
+			congestion_bbr1.InitialCongestionWindowPackets,
+			congestion_bbr1.MaxCongestionWindowPackets,
+		))
+	case "bbr2":
+		connection.SetCongestionControl(congestion_bbr2.NewBBR2Sender(
+			congestion_bbr2.DefaultClock{TimeFunc: timeFunc},
+			congestion.ByteCount(connection.Config().InitialPacketSize),
+			0,
+			false,
+		))
+	case "bbr2_aggressive":
+		connection.SetCongestionControl(congestion_bbr2.NewBBR2Sender(
+			congestion_bbr2.DefaultClock{TimeFunc: timeFunc},
+			congestion.ByteCount(connection.Config().InitialPacketSize),
+			32*congestion.ByteCount(connection.Config().InitialPacketSize),
+			true,
 		))
 	}
 }
