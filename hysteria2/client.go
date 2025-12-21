@@ -14,13 +14,12 @@ import (
 	"github.com/sagernet/quic-go"
 	"github.com/sagernet/quic-go/congestion"
 	"github.com/sagernet/quic-go/http3"
-	"github.com/sagernet/sing-quic"
+	qtls "github.com/sagernet/sing-quic"
 	congestion_meta1 "github.com/sagernet/sing-quic/congestion_meta1"
 	congestion_meta2 "github.com/sagernet/sing-quic/congestion_meta2"
 	"github.com/sagernet/sing-quic/hysteria"
 	hyCC "github.com/sagernet/sing-quic/hysteria/congestion"
 	"github.com/sagernet/sing-quic/hysteria2/internal/protocol"
-	"github.com/sagernet/sing/common/baderror"
 	"github.com/sagernet/sing/common/bufio"
 	E "github.com/sagernet/sing/common/exceptions"
 	"github.com/sagernet/sing/common/logger"
@@ -313,11 +312,11 @@ func (c *clientConn) NeedHandshake() bool {
 func (c *clientConn) Read(p []byte) (n int, err error) {
 	if c.responseRead {
 		n, err = c.Stream.Read(p)
-		return n, baderror.WrapQUIC(err)
+		return n, qtls.WrapError(err)
 	}
 	status, errorMessage, err := protocol.ReadTCPResponse(c.Stream)
 	if err != nil {
-		return 0, baderror.WrapQUIC(err)
+		return 0, qtls.WrapError(err)
 	}
 	if !status {
 		err = E.New("remote error: ", errorMessage)
@@ -325,7 +324,7 @@ func (c *clientConn) Read(p []byte) (n int, err error) {
 	}
 	c.responseRead = true
 	n, err = c.Stream.Read(p)
-	return n, baderror.WrapQUIC(err)
+	return n, qtls.WrapError(err)
 }
 
 func (c *clientConn) Write(p []byte) (n int, err error) {
@@ -340,7 +339,7 @@ func (c *clientConn) Write(p []byte) (n int, err error) {
 		return len(p), nil
 	}
 	n, err = c.Stream.Write(p)
-	return n, baderror.WrapQUIC(err)
+	return n, qtls.WrapError(err)
 }
 
 func (c *clientConn) LocalAddr() net.Addr {

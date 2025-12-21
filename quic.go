@@ -38,24 +38,28 @@ type EarlyListener interface {
 
 func Dial(ctx context.Context, conn net.PacketConn, addr net.Addr, config aTLS.Config, quicConfig *quic.Config) (*quic.Conn, error) {
 	if quicTLSConfig, isQUICConfig := config.(Config); isQUICConfig {
-		return quicTLSConfig.Dial(ctx, conn, addr, quicConfig)
+		quicConn, err := quicTLSConfig.Dial(ctx, conn, addr, quicConfig)
+		return quicConn, WrapError(err)
 	}
 	tlsConfig, err := config.STDConfig()
 	if err != nil {
 		return nil, err
 	}
-	return quic.Dial(ctx, conn, addr, tlsConfig, quicConfig)
+	quicConn, err := quic.Dial(ctx, conn, addr, tlsConfig, quicConfig)
+	return quicConn, WrapError(err)
 }
 
 func DialEarly(ctx context.Context, conn net.PacketConn, addr net.Addr, config aTLS.Config, quicConfig *quic.Config) (*quic.Conn, error) {
 	if quicTLSConfig, isQUICConfig := config.(Config); isQUICConfig {
-		return quicTLSConfig.DialEarly(ctx, conn, addr, quicConfig)
+		quicConn, err := quicTLSConfig.DialEarly(ctx, conn, addr, quicConfig)
+		return quicConn, WrapError(err)
 	}
 	tlsConfig, err := config.STDConfig()
 	if err != nil {
 		return nil, err
 	}
-	return quic.DialEarly(ctx, conn, addr, tlsConfig, quicConfig)
+	quicConn, err := quic.DialEarly(ctx, conn, addr, tlsConfig, quicConfig)
+	return quicConn, WrapError(err)
 }
 
 func CreateTransport(conn net.PacketConn, quicConnPtr **quic.Conn, serverAddr M.Socksaddr, config aTLS.Config, quicConfig *quic.Config) (http.RoundTripper, error) {
@@ -72,7 +76,7 @@ func CreateTransport(conn net.PacketConn, quicConnPtr **quic.Conn, serverAddr M.
 		Dial: func(ctx context.Context, addr string, tlsCfg *tls.Config, cfg *quic.Config) (*quic.Conn, error) {
 			quicConn, err := quic.DialEarly(ctx, conn, serverAddr.UDPAddr(), tlsCfg, cfg)
 			if err != nil {
-				return nil, err
+				return nil, WrapError(err)
 			}
 			*quicConnPtr = quicConn
 			return quicConn, nil
@@ -82,24 +86,28 @@ func CreateTransport(conn net.PacketConn, quicConnPtr **quic.Conn, serverAddr M.
 
 func Listen(conn net.PacketConn, config aTLS.ServerConfig, quicConfig *quic.Config) (Listener, error) {
 	if quicTLSConfig, isQUICConfig := config.(ServerConfig); isQUICConfig {
-		return quicTLSConfig.Listen(conn, quicConfig)
+		listener, err := quicTLSConfig.Listen(conn, quicConfig)
+		return listener, WrapError(err)
 	}
 	tlsConfig, err := config.STDConfig()
 	if err != nil {
 		return nil, err
 	}
-	return quic.Listen(conn, tlsConfig, quicConfig)
+	listener, err := quic.Listen(conn, tlsConfig, quicConfig)
+	return listener, WrapError(err)
 }
 
 func ListenEarly(conn net.PacketConn, config aTLS.ServerConfig, quicConfig *quic.Config) (EarlyListener, error) {
 	if quicTLSConfig, isQUICConfig := config.(ServerConfig); isQUICConfig {
-		return quicTLSConfig.ListenEarly(conn, quicConfig)
+		listener, err := quicTLSConfig.ListenEarly(conn, quicConfig)
+		return listener, WrapError(err)
 	}
 	tlsConfig, err := config.STDConfig()
 	if err != nil {
 		return nil, err
 	}
-	return quic.ListenEarly(conn, tlsConfig, quicConfig)
+	listener, err := quic.ListenEarly(conn, tlsConfig, quicConfig)
+	return listener, WrapError(err)
 }
 
 func ConfigureHTTP3(config aTLS.ServerConfig) error {

@@ -12,10 +12,9 @@ import (
 	"time"
 
 	"github.com/sagernet/quic-go"
-	"github.com/sagernet/sing-quic"
+	qtls "github.com/sagernet/sing-quic"
 	"github.com/sagernet/sing/common"
 	"github.com/sagernet/sing/common/auth"
-	"github.com/sagernet/sing/common/baderror"
 	"github.com/sagernet/sing/common/buf"
 	"github.com/sagernet/sing/common/bufio"
 	E "github.com/sagernet/sing/common/exceptions"
@@ -404,12 +403,12 @@ type serverConn struct {
 
 func (c *serverConn) Read(p []byte) (n int, err error) {
 	n, err = c.Stream.Read(p)
-	return n, baderror.WrapQUIC(err)
+	return n, qtls.WrapError(err)
 }
 
 func (c *serverConn) Write(p []byte) (n int, err error) {
 	n, err = c.Stream.Write(p)
-	return n, baderror.WrapQUIC(err)
+	return n, qtls.WrapError(err)
 }
 
 func (c *serverConn) LocalAddr() net.Addr {

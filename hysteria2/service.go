@@ -14,7 +14,7 @@ import (
 	"github.com/sagernet/quic-go"
 	"github.com/sagernet/quic-go/congestion"
 	"github.com/sagernet/quic-go/http3"
-	"github.com/sagernet/sing-quic"
+	qtls "github.com/sagernet/sing-quic"
 	congestion_meta1 "github.com/sagernet/sing-quic/congestion_meta1"
 	congestion_meta2 "github.com/sagernet/sing-quic/congestion_meta2"
 	"github.com/sagernet/sing-quic/hysteria"
@@ -22,7 +22,6 @@ import (
 	"github.com/sagernet/sing-quic/hysteria2/internal/protocol"
 	"github.com/sagernet/sing/common"
 	"github.com/sagernet/sing/common/auth"
-	"github.com/sagernet/sing/common/baderror"
 	E "github.com/sagernet/sing/common/exceptions"
 	"github.com/sagernet/sing/common/logger"
 	M "github.com/sagernet/sing/common/metadata"
@@ -319,7 +318,7 @@ func (c *serverConn) HandshakeSuccess() error {
 
 func (c *serverConn) Read(p []byte) (n int, err error) {
 	n, err = c.Stream.Read(p)
-	return n, baderror.WrapQUIC(err)
+	return n, qtls.WrapError(err)
 }
 
 func (c *serverConn) Write(p []byte) (n int, err error) {
@@ -329,12 +328,12 @@ func (c *serverConn) Write(p []byte) (n int, err error) {
 		defer buffer.Release()
 		_, err = c.Stream.Write(buffer.Bytes())
 		if err != nil {
-			return 0, baderror.WrapQUIC(err)
+			return 0, qtls.WrapError(err)
 		}
 		return len(p), nil
 	}
 	n, err = c.Stream.Write(p)
-	return n, baderror.WrapQUIC(err)
+	return n, qtls.WrapError(err)
 }
 
 func (c *serverConn) LocalAddr() net.Addr {

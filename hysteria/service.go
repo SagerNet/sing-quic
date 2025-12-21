@@ -12,11 +12,10 @@ import (
 	"time"
 
 	"github.com/sagernet/quic-go"
-	"github.com/sagernet/sing-quic"
+	qtls "github.com/sagernet/sing-quic"
 	hyCC "github.com/sagernet/sing-quic/hysteria/congestion"
 	"github.com/sagernet/sing/common"
 	"github.com/sagernet/sing/common/auth"
-	"github.com/sagernet/sing/common/baderror"
 	"github.com/sagernet/sing/common/canceler"
 	E "github.com/sagernet/sing/common/exceptions"
 	"github.com/sagernet/sing/common/logger"
@@ -344,7 +343,7 @@ func (c *serverConn) HandshakeSuccess() error {
 
 func (c *serverConn) Read(p []byte) (n int, err error) {
 	n, err = c.Stream.Read(p)
-	return n, baderror.WrapQUIC(err)
+	return n, qtls.WrapError(err)
 }
 
 func (c *serverConn) Write(p []byte) (n int, err error) {
@@ -354,11 +353,11 @@ func (c *serverConn) Write(p []byte) (n int, err error) {
 			OK: true,
 		})
 		if err != nil {
-			return 0, baderror.WrapQUIC(err)
+			return 0, qtls.WrapError(err)
 		}
 	}
 	n, err = c.Stream.Write(p)
-	return n, baderror.WrapQUIC(err)
+	return n, qtls.WrapError(err)
 }
 
 func (c *serverConn) LocalAddr() net.Addr {
