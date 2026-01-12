@@ -351,6 +351,5 @@ func (c *clientConn) RemoteAddr() net.Addr {
 }
 
 func (c *clientConn) Close() error {
-	c.Stream.CancelRead(0)
 	return c.Stream.Close()
 }
