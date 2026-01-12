@@ -231,7 +231,7 @@ func (c *Client) offerNew(ctx context.Context) (*clientQUICConnection, error) {
 		quicConn:    quicConn,
 		rawConn:     packetConn,
 		connDone:    make(chan struct{}),
-		udpDisabled: !quicConn.ConnectionState().SupportsDatagrams,
+		udpDisabled: !(quicConn.ConnectionState().SupportsDatagrams.Local && quicConn.ConnectionState().SupportsDatagrams.Remote),
 		udpConnMap:  make(map[uint32]*udpPacketConn),
 	}
 	if !c.udpDisabled {
