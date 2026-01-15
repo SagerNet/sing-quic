@@ -34,9 +34,10 @@ type ServiceOptions struct {
 	CongestionControl string
 	AuthTimeout       time.Duration
 	ZeroRTTHandshake  bool
-	Heartbeat         time.Duration
 	UDPTimeout        time.Duration
 	Handler           ServiceHandler
+	// Deprecated: no longer used.
+	Heartbeat time.Duration
 }
 
 type ServiceHandler interface {
@@ -48,7 +49,6 @@ type Service[U comparable] struct {
 	ctx               context.Context
 	logger            logger.Logger
 	tlsConfig         aTLS.ServerConfig
-	heartbeat         time.Duration
 	quicConfig        *quic.Config
 	userMap           map[[16]byte]U
 	passwordMap       map[U]string
@@ -63,9 +63,6 @@ type Service[U comparable] struct {
 func NewService[U comparable](options ServiceOptions) (*Service[U], error) {
 	if options.AuthTimeout == 0 {
 		options.AuthTimeout = 3 * time.Second
-	}
-	if options.Heartbeat == 0 {
-		options.Heartbeat = 10 * time.Second
 	}
 	quicConfig := &quic.Config{
 		DisablePathMTUDiscovery: !(runtime.GOOS == "windows" || runtime.GOOS == "linux" || runtime.GOOS == "android" || runtime.GOOS == "darwin"),
@@ -86,7 +83,6 @@ func NewService[U comparable](options ServiceOptions) (*Service[U], error) {
 		ctx:               options.Context,
 		logger:            options.Logger,
 		tlsConfig:         options.TLSConfig,
-		heartbeat:         options.Heartbeat,
 		quicConfig:        quicConfig,
 		userMap:           make(map[[16]byte]U),
 		congestionControl: options.CongestionControl,
@@ -198,7 +194,6 @@ func (s *serverSession[U]) handle() {
 	go s.loopStreams()
 	go s.loopMessages()
 	go s.handleAuthTimeout()
-	go s.loopHeartbeats()
 }
 
 func (s *serverSession[U]) loopUniStreams() {
@@ -361,22 +356,6 @@ func (s *serverSession[U]) handleStream(stream quic.Stream) error {
 	}
 	s.handler.NewConnectionEx(auth.ContextWithUser(s.ctx, s.authUser), conn, M.SocksaddrFromNet(s.quicConn.RemoteAddr()).Unwrap(), destination, nil)
 	return nil
-}
-
-func (s *serverSession[U]) loopHeartbeats() {
-	ticker := time.NewTicker(s.heartbeat)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-s.connDone:
-			return
-		case <-ticker.C:
-			err := s.quicConn.SendDatagram([]byte{Version, CommandHeartbeat})
-			if err != nil {
-				s.closeWithError(E.Cause(err, "send heartbeat"))
-			}
-		}
-	}
 }
 
 func (s *serverSession[U]) closeWithError(err error) {

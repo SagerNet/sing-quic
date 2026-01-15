@@ -41,12 +41,12 @@ func (c *Client) handleMessage(conn *clientQUICConnection, data []byte) error {
 			return E.Cause(err, "decode UDP message")
 		}
 		conn.handleUDPMessage(message)
-		return nil
-	case CommandHeartbeat:
-		return nil
 	default:
-		return E.New("unknown command ", data[0])
+		if c.logger != nil {
+			c.logger.Warn("unknown command ", data[1])
+		}
 	}
+	return nil
 }
 
 func (c *Client) loopUniStreams(conn *clientQUICConnection) {
@@ -78,17 +78,21 @@ func (c *Client) handleUniStream(conn *clientQUICConnection, stream quic.Receive
 		return E.New("unknown version ", version)
 	}
 	command, _ := buffer.ReadByte()
-	if command != CommandPacket {
-		return E.New("unknown command ", command)
+	switch command {
+	case CommandPacket:
+		reader := io.MultiReader(bufio.NewCachedReader(stream, buffer), stream)
+		message := allocMessage()
+		err = readUDPMessage(message, reader)
+		if err != nil {
+			message.release()
+			return err
+		}
+		conn.handleUDPMessage(message)
+	default:
+		if c.logger != nil {
+			c.logger.Warn("unknown command ", command)
+		}
 	}
-	reader := io.MultiReader(bufio.NewCachedReader(stream, buffer), stream)
-	message := allocMessage()
-	err = readUDPMessage(message, reader)
-	if err != nil {
-		message.release()
-		return err
-	}
-	conn.handleUDPMessage(message)
 	return nil
 }
 
