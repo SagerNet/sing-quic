@@ -2,6 +2,7 @@ package hysteria2
 
 import (
 	"net"
+	"os"
 
 	"github.com/sagernet/sing/common"
 	"github.com/sagernet/sing/common/buf"
@@ -71,6 +72,34 @@ func (s *SalamanderPacketConn) WriteTo(p []byte, addr net.Addr) (n int, err erro
 
 func (s *SalamanderPacketConn) Upstream() any {
 	return s.PacketConn
+}
+
+func (s *SalamanderPacketConn) SetReadBuffer(bytes int) error {
+	return trySetReadBuffer(s.PacketConn, bytes)
+}
+
+func (s *SalamanderPacketConn) SetWriteBuffer(bytes int) error {
+	return trySetWriteBuffer(s.PacketConn, bytes)
+}
+
+func trySetReadBuffer(conn net.PacketConn, bytes int) error {
+	udpConn, isUDPConn := common.Cast[interface {
+		SetReadBuffer(bytes int) error
+	}](conn)
+	if !isUDPConn {
+		return os.ErrInvalid
+	}
+	return udpConn.SetReadBuffer(bytes)
+}
+
+func trySetWriteBuffer(conn net.PacketConn, bytes int) error {
+	udpConn, isUDPConn := common.Cast[interface {
+		SetWriteBuffer(bytes int) error
+	}](conn)
+	if !isUDPConn {
+		return os.ErrInvalid
+	}
+	return udpConn.SetWriteBuffer(bytes)
 }
 
 type VectorisedSalamanderPacketConn struct {

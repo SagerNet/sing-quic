@@ -68,6 +68,14 @@ func (g *GeckoPacketConn) Upstream() any {
 	return g.PacketConn
 }
 
+func (g *GeckoPacketConn) SetReadBuffer(bytes int) error {
+	return trySetReadBuffer(g.PacketConn, bytes)
+}
+
+func (g *GeckoPacketConn) SetWriteBuffer(bytes int) error {
+	return trySetWriteBuffer(g.PacketConn, bytes)
+}
+
 func (g *GeckoPacketConn) WriteTo(p []byte, addr net.Addr) (int, error) {
 	if len(p) == 0 {
 		return 0, nil
