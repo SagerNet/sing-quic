@@ -30,9 +30,9 @@ func (c *Client) handleMessage(conn *clientQUICConnection, data []byte) error {
 }
 
 func (c *clientQUICConnection) handleUDPMessage(message *udpMessage) {
-	c.udpAccess.RLock()
+	c.access.RLock()
 	udpConn, loaded := c.udpConnMap[message.sessionID]
-	c.udpAccess.RUnlock()
+	c.access.RUnlock()
 	if !loaded {
 		message.releaseMessage()
 		return
