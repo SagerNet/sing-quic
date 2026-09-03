@@ -7,6 +7,7 @@ import (
 	"os"
 	"runtime"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/sagernet/quic-go"
@@ -48,6 +49,7 @@ type Client struct {
 
 	connAccess sync.Mutex
 	conn       *clientQUICConnection
+	closeIdle  atomic.Bool
 	pending    *clientOffer
 }
 
@@ -179,6 +181,7 @@ func (c *Client) offerNew(ctx context.Context) (*clientQUICConnection, error) {
 		rawConn:    udpConn,
 		connDone:   make(chan struct{}),
 		udpConnMap: make(map[uint16]*udpPacketConn),
+		closeIdle:  &c.closeIdle,
 	}
 	go func() {
 		hErr := c.clientHandshake(quicConn)
@@ -238,6 +241,11 @@ func (c *Client) DialConn(ctx context.Context, destination M.Socksaddr) (net.Con
 	if err != nil {
 		return nil, err
 	}
+	if qtls.KeepSessionFromContext(ctx) {
+		conn.access.Lock()
+		conn.keepOnce = true
+		conn.access.Unlock()
+	}
 	stream, err := conn.quicConn.OpenStream()
 	if err != nil {
 		conn.releaseStream()
@@ -294,6 +302,13 @@ func (c *Client) CloseWithError(err error) error {
 	return nil
 }
 
+func (c *Client) SetKeepIdleConnections(keep bool) {
+	c.closeIdle.Store(!keep)
+	if !keep {
+		c.CloseIdleConnections()
+	}
+}
+
 func (c *Client) CloseIdleConnections() {
 	c.connAccess.Lock()
 	conn := c.conn
@@ -302,7 +317,6 @@ func (c *Client) CloseIdleConnections() {
 		return
 	}
 	conn.access.Lock()
-	conn.draining = true
 	drained := conn.streams == 0 && len(conn.udpConnMap) == 0
 	conn.access.Unlock()
 	if drained {
@@ -329,7 +343,8 @@ type clientQUICConnection struct {
 	udpConnMap   map[uint16]*udpPacketConn
 	udpSessionID uint16
 	streams      int
-	draining     bool
+	closeIdle    *atomic.Bool
+	keepOnce     bool
 }
 
 func (c *clientQUICConnection) active() bool {
@@ -355,14 +370,15 @@ func (c *clientQUICConnection) acquireStream() error {
 	default:
 	}
 	c.streams++
-	c.draining = false
 	return nil
 }
 
 func (c *clientQUICConnection) releaseStream() {
 	c.access.Lock()
 	c.streams--
-	drained := c.draining && c.streams == 0 && len(c.udpConnMap) == 0
+	keepOnce := c.keepOnce
+	c.keepOnce = false
+	drained := c.closeIdle.Load() && !keepOnce && c.streams == 0 && len(c.udpConnMap) == 0
 	c.access.Unlock()
 	if drained {
 		c.closeWithError(os.ErrClosed)
@@ -372,7 +388,7 @@ func (c *clientQUICConnection) releaseStream() {
 func (c *clientQUICConnection) releaseUDPSession(sessionID uint16) {
 	c.access.Lock()
 	delete(c.udpConnMap, sessionID)
-	drained := c.draining && c.streams == 0 && len(c.udpConnMap) == 0
+	drained := c.closeIdle.Load() && c.streams == 0 && len(c.udpConnMap) == 0
 	c.access.Unlock()
 	if drained {
 		c.closeWithError(os.ErrClosed)
