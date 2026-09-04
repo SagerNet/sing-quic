@@ -11,6 +11,7 @@ import (
 	"runtime"
 	"slices"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/sagernet/quic-go"
@@ -79,6 +80,7 @@ type Client struct {
 
 	connAccess sync.Mutex
 	conn       *clientQUICConnection
+	closeIdle  atomic.Bool
 	pending    *clientOffer
 }
 
@@ -598,6 +600,7 @@ func (c *Client) authenticateAndWrap(ctx context.Context, rawConn io.Closer, cre
 		connDone:    make(chan struct{}),
 		udpDisabled: !authResponse.UDPEnabled,
 		udpConnMap:  make(map[uint32]*udpPacketConn),
+		closeIdle:   &c.closeIdle,
 	}
 	if !c.udpDisabled {
 		go c.loopMessages(conn)
@@ -614,13 +617,20 @@ func (c *Client) DialConn(ctx context.Context, destination M.Socksaddr) (net.Con
 	if err != nil {
 		return nil, err
 	}
+	err = conn.acquireStream()
+	if err != nil {
+		return nil, err
+	}
 	stream, err := conn.quicConn.OpenStream()
 	if err != nil {
+		conn.releaseStream(false)
 		return nil, err
 	}
 	return &clientConn{
 		Stream:      stream,
+		parent:      conn,
 		destination: destination,
+		keepSession: qtls.KeepSessionFromContext(ctx),
 	}, nil
 }
 
@@ -637,21 +647,19 @@ func (c *Client) ListenPacket(ctx context.Context) (net.PacketConn, error) {
 	}
 	var sessionID uint32
 	clientPacketConn := newUDPPacketConn(c.ctx, conn.quicConn, func() {
-		conn.udpAccess.Lock()
-		delete(conn.udpConnMap, sessionID)
-		conn.udpAccess.Unlock()
+		conn.releaseUDPSession(sessionID)
 	})
-	conn.udpAccess.Lock()
+	conn.access.Lock()
 	select {
 	case <-conn.connDone:
-		conn.udpAccess.Unlock()
+		conn.access.Unlock()
 		return nil, E.Errors(conn.connErr, os.ErrClosed)
 	default:
 	}
 	sessionID = conn.udpSessionID
 	conn.udpSessionID++
 	conn.udpConnMap[sessionID] = clientPacketConn
-	conn.udpAccess.Unlock()
+	conn.access.Unlock()
 	clientPacketConn.sessionID = sessionID
 	return clientPacketConn, nil
 }
@@ -676,6 +684,28 @@ func (c *Client) CloseWithError(err error) error {
 	return nil
 }
 
+func (c *Client) SetKeepIdleConnections(keep bool) {
+	c.closeIdle.Store(!keep)
+	if !keep {
+		c.CloseIdleConnections()
+	}
+}
+
+func (c *Client) CloseIdleConnections() {
+	c.connAccess.Lock()
+	conn := c.conn
+	c.connAccess.Unlock()
+	if conn == nil {
+		return
+	}
+	conn.access.Lock()
+	drained := conn.streams == 0 && len(conn.udpConnMap) == 0
+	conn.access.Unlock()
+	if drained {
+		conn.closeWithError(os.ErrClosed)
+	}
+}
+
 type clientOffer struct {
 	done      chan struct{}
 	cancel    func(error)
@@ -692,9 +722,11 @@ type clientQUICConnection struct {
 	connDone     chan struct{}
 	connErr      error
 	udpDisabled  bool
-	udpAccess    sync.RWMutex
+	access       sync.RWMutex
 	udpConnMap   map[uint32]*udpPacketConn
 	udpSessionID uint32
+	streams      int
+	closeIdle    *atomic.Bool
 }
 
 func (c *clientQUICConnection) active() bool {
@@ -711,14 +743,46 @@ func (c *clientQUICConnection) active() bool {
 	return true
 }
 
+func (c *clientQUICConnection) acquireStream() error {
+	c.access.Lock()
+	defer c.access.Unlock()
+	select {
+	case <-c.connDone:
+		return E.Errors(c.connErr, os.ErrClosed)
+	default:
+	}
+	c.streams++
+	return nil
+}
+
+func (c *clientQUICConnection) releaseStream(keepSession bool) {
+	c.access.Lock()
+	c.streams--
+	drained := c.closeIdle.Load() && !keepSession && c.streams == 0 && len(c.udpConnMap) == 0
+	c.access.Unlock()
+	if drained {
+		c.closeWithError(os.ErrClosed)
+	}
+}
+
+func (c *clientQUICConnection) releaseUDPSession(sessionID uint32) {
+	c.access.Lock()
+	delete(c.udpConnMap, sessionID)
+	drained := c.closeIdle.Load() && c.streams == 0 && len(c.udpConnMap) == 0
+	c.access.Unlock()
+	if drained {
+		c.closeWithError(os.ErrClosed)
+	}
+}
+
 func (c *clientQUICConnection) closeWithError(err error) {
 	c.closeOnce.Do(func() {
 		c.connErr = err
-		c.udpAccess.Lock()
+		c.access.Lock()
 		close(c.connDone)
 		udpConnMap := c.udpConnMap
 		c.udpConnMap = make(map[uint32]*udpPacketConn)
-		c.udpAccess.Unlock()
+		c.access.Unlock()
 		for _, udpConn := range udpConnMap {
 			udpConn.closeWithError(err)
 		}
@@ -729,9 +793,12 @@ func (c *clientQUICConnection) closeWithError(err error) {
 
 type clientConn struct {
 	*quic.Stream
+	parent         *clientQUICConnection
 	destination    M.Socksaddr
+	keepSession    bool
 	requestWritten bool
 	responseRead   bool
+	closeOnce      sync.Once
 }
 
 func (c *clientConn) NeedHandshake() bool {
@@ -785,5 +852,6 @@ func (c *clientConn) Close() error {
 	// quic-go's Stream.Close does not unblock a Write blocked on flow control,
 	// but a past write deadline does; buffered data and the FIN are unaffected.
 	c.Stream.SetWriteDeadline(time.Now())
+	c.closeOnce.Do(func() { c.parent.releaseStream(c.keepSession) })
 	return err
 }
