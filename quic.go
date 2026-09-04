@@ -318,3 +318,14 @@ func ConfigureHTTP3(config aTLS.ServerConfig) error {
 	http3.ConfigureTLSConfig(tlsConfig)
 	return nil
 }
+
+type keepSessionKey struct{}
+
+func ContextWithKeepSession(ctx context.Context) context.Context {
+	return context.WithValue(ctx, (*keepSessionKey)(nil), true)
+}
+
+func KeepSessionFromContext(ctx context.Context) bool {
+	keep, _ := ctx.Value((*keepSessionKey)(nil)).(bool)
+	return keep
+}
