@@ -57,6 +57,9 @@ type Service[U comparable] struct {
 	udpTimeout        time.Duration
 	handler           ServiceHandler
 
+	sessionAccess sync.Mutex
+	sessions      map[*serverSession[U]]struct{}
+
 	quicListener io.Closer
 }
 
@@ -94,6 +97,7 @@ func NewService[U comparable](options ServiceOptions) (*Service[U], error) {
 		authTimeout:       options.AuthTimeout,
 		udpTimeout:        options.UDPTimeout,
 		handler:           options.Handler,
+		sessions:          make(map[*serverSession[U]]struct{}),
 	}, nil
 }
 
@@ -106,6 +110,48 @@ func (s *Service[U]) UpdateUsers(userList []U, uuidList [][16]byte, passwordList
 	}
 	s.userMap = userMap
 	s.passwordMap = passwordMap
+	s.closeRemovedSessions(userList)
+}
+
+// trackSession registers an authenticated session, so that a later UpdateUsers
+// can revoke it. Only authenticated sessions are registered: before that there
+// is no user to match a removed one against.
+func (s *Service[U]) trackSession(session *serverSession[U]) {
+	s.sessionAccess.Lock()
+	defer s.sessionAccess.Unlock()
+	s.sessions[session] = struct{}{}
+}
+
+func (s *Service[U]) untrackSession(session *serverSession[U]) {
+	s.sessionAccess.Lock()
+	defer s.sessionAccess.Unlock()
+	delete(s.sessions, session)
+}
+
+// closeRemovedSessions closes the sessions of users that are gone from the new
+// user table. A session authenticates once and then multiplexes every later
+// stream over the same QUIC connection without consulting the user table
+// again, so dropping a user from it does not by itself revoke the access that
+// user already has.
+//
+// Victims are collected under the lock and closed after it is released:
+// closeWithError untracks the session, which takes the same lock.
+func (s *Service[U]) closeRemovedSessions(userList []U) {
+	users := make(map[U]struct{}, len(userList))
+	for _, user := range userList {
+		users[user] = struct{}{}
+	}
+	s.sessionAccess.Lock()
+	var removed []*serverSession[U]
+	for session := range s.sessions {
+		if _, stillValid := users[session.authUser]; !stillValid {
+			removed = append(removed, session)
+		}
+	}
+	s.sessionAccess.Unlock()
+	for _, session := range removed {
+		session.closeWithError(E.New("user removed"))
+	}
 }
 
 func (s *Service[U]) Start(conn net.PacketConn) error {
@@ -258,6 +304,9 @@ func (s *serverSession[U]) handleUniStream(stream *quic.ReceiveStream) error {
 			return E.New("authentication: token mismatch")
 		}
 		s.authUser = user
+		// Before authDone, so that the session cannot start relaying streams
+		// while it is still invisible to closeRemovedSessions.
+		s.trackSession(s)
 		close(s.authDone)
 		return nil
 	case CommandPacket:
@@ -390,6 +439,7 @@ func (s *serverSession[U]) closeWithError(err error) {
 		s.connErr = err
 		close(s.connDone)
 	}
+	s.untrackSession(s)
 	if E.IsClosedOrCanceled(err) {
 		s.logger.Debug(E.Cause(err, "connection failed"))
 	} else {

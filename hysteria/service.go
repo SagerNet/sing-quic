@@ -56,6 +56,9 @@ type Service[U comparable] struct {
 	udpTimeout    time.Duration
 	handler       ServerHandler
 	quicListener  io.Closer
+
+	sessionAccess sync.Mutex
+	sessions      map[*serverSession[U]]struct{}
 }
 
 func NewService[U comparable](options ServiceOptions) (*Service[U], error) {
@@ -94,6 +97,7 @@ func NewService[U comparable](options ServiceOptions) (*Service[U], error) {
 		handler:       options.Handler,
 		udpDisabled:   options.UDPDisabled,
 		udpTimeout:    options.UDPTimeout,
+		sessions:      make(map[*serverSession[U]]struct{}),
 	}, nil
 }
 
@@ -103,6 +107,48 @@ func (s *Service[U]) UpdateUsers(userList []U, passwordList []string) {
 		userMap[passwordList[i]] = user
 	}
 	s.userMap = userMap
+	s.closeRemovedSessions(userList)
+}
+
+// trackSession registers an authenticated session, so that a later UpdateUsers
+// can revoke it. Only authenticated sessions are registered: before that there
+// is no user to match a removed one against.
+func (s *Service[U]) trackSession(session *serverSession[U]) {
+	s.sessionAccess.Lock()
+	defer s.sessionAccess.Unlock()
+	s.sessions[session] = struct{}{}
+}
+
+func (s *Service[U]) untrackSession(session *serverSession[U]) {
+	s.sessionAccess.Lock()
+	defer s.sessionAccess.Unlock()
+	delete(s.sessions, session)
+}
+
+// closeRemovedSessions closes the sessions of users that are gone from the new
+// user table. A session authenticates once and then multiplexes every later
+// stream over the same QUIC connection without consulting the user table
+// again, so dropping a user from it does not by itself revoke the access that
+// user already has.
+//
+// Victims are collected under the lock and closed after it is released, so
+// that the close path is never run with the session lock held.
+func (s *Service[U]) closeRemovedSessions(userList []U) {
+	users := make(map[U]struct{}, len(userList))
+	for _, user := range userList {
+		users[user] = struct{}{}
+	}
+	s.sessionAccess.Lock()
+	var removed []*serverSession[U]
+	for session := range s.sessions {
+		if _, stillValid := users[session.authUser]; !stillValid {
+			removed = append(removed, session)
+		}
+	}
+	s.sessionAccess.Unlock()
+	for _, session := range removed {
+		session.closeWithError(E.New("user removed"))
+	}
 }
 
 func (s *Service[U]) Start(conn net.PacketConn) error {
@@ -160,6 +206,7 @@ type serverSession[U comparable] struct {
 }
 
 func (s *serverSession[U]) handleConnection() {
+	defer s.untrackSession(s)
 	ctx, cancel := context.WithTimeout(s.ctx, ProtocolTimeout)
 	controlStream, err := s.quicConn.AcceptStream(ctx)
 	cancel()
@@ -193,6 +240,7 @@ func (s *serverSession[U]) handleConnection() {
 	}
 	_ = controlStream.SetDeadline(time.Time{})
 	s.authUser = user
+	s.trackSession(s)
 	s.quicConn.SetCongestionControl(hyCC.NewBrutalSender(min(s.sendBPS, clientHello.RecvBPS), s.quicConn.InitialPacketSize(), s.brutalDebug, s.logger))
 	if !s.udpDisabled {
 		go s.loopMessages()
