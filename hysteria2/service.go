@@ -76,6 +76,9 @@ type Service[U comparable] struct {
 	quicListener          io.Closer
 	bbrProfile            congestion_meta2.Profile
 	realmServer           *realm.Server
+
+	sessionAccess sync.Mutex
+	sessions      map[*serverSession[U]]struct{}
 }
 
 func NewService[U comparable](options ServiceOptions) (*Service[U], error) {
@@ -145,6 +148,7 @@ func NewService[U comparable](options ServiceOptions) (*Service[U], error) {
 		masqueradeHandler:     options.MasqueradeHandler,
 		bbrProfile:            bbrProfile,
 		realmServer:           realmServer,
+		sessions:              make(map[*serverSession[U]]struct{}),
 	}, nil
 }
 
@@ -154,6 +158,48 @@ func (s *Service[U]) UpdateUsers(userList []U, passwordList []string) {
 		userMap[passwordList[i]] = user
 	}
 	s.userMap = userMap
+	s.closeRemovedSessions(userList)
+}
+
+// trackSession registers an authenticated session, so that a later UpdateUsers
+// can revoke it. Only authenticated sessions are registered: before that there
+// is no user to match a removed one against.
+func (s *Service[U]) trackSession(session *serverSession[U]) {
+	s.sessionAccess.Lock()
+	defer s.sessionAccess.Unlock()
+	s.sessions[session] = struct{}{}
+}
+
+func (s *Service[U]) untrackSession(session *serverSession[U]) {
+	s.sessionAccess.Lock()
+	defer s.sessionAccess.Unlock()
+	delete(s.sessions, session)
+}
+
+// closeRemovedSessions closes the sessions of users that are gone from the new
+// user table. A session authenticates once and then multiplexes every later
+// stream over the same QUIC connection without consulting the user table
+// again, so dropping a user from it does not by itself revoke the access that
+// user already has.
+//
+// Victims are collected under the lock and closed after it is released, so
+// that the close path is never run with the session lock held.
+func (s *Service[U]) closeRemovedSessions(userList []U) {
+	users := make(map[U]struct{}, len(userList))
+	for _, user := range userList {
+		users[user] = struct{}{}
+	}
+	s.sessionAccess.Lock()
+	var removed []*serverSession[U]
+	for session := range s.sessions {
+		if _, stillValid := users[session.authUser]; !stillValid {
+			removed = append(removed, session)
+		}
+	}
+	s.sessionAccess.Unlock()
+	for _, session := range removed {
+		session.closeWithError(E.New("user removed"))
+	}
 }
 
 func (s *Service[U]) Start(conn net.PacketConn) error {
@@ -247,6 +293,7 @@ func (s *Service[U]) handleConnection(connection *quic.Conn) {
 		connDone:   make(chan struct{}),
 		udpConnMap: make(map[uint32]*udpPacketConn),
 	}
+	defer s.untrackSession(session)
 	httpServer := http3.Server{
 		Handler:          session,
 		StreamDispatcher: session.dispatchStream,
@@ -287,6 +334,7 @@ func (s *serverSession[U]) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		s.authUser = user
 		s.authenticated = true
+		s.trackSession(s)
 		var rxAuto bool
 		if s.receiveBPS > 0 && s.ignoreClientBandwidth && request.Rx == 0 {
 			s.logger.Debug("process connection from ", r.RemoteAddr, ": BBR disabled by server")
