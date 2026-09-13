@@ -160,6 +160,9 @@ func (s *Service[U]) Start(conn net.PacketConn) error {
 	if s.realmServer != nil {
 		return s.startWithRealm(conn)
 	}
+	if s.geckoPassword != "" || s.salamanderPassword != "" {
+		qtls.SetDesiredBufferSizes(conn)
+	}
 	if s.geckoPassword != "" {
 		conn = NewGeckoConn(conn, []byte(s.geckoPassword), s.geckoMinPacketSize, s.geckoMaxPacketSize)
 	} else if s.salamanderPassword != "" {
@@ -188,6 +191,9 @@ func (s *Service[U]) startWithRealm(conn net.PacketConn) error {
 		return E.Cause(err, "start realm server")
 	}
 	var quicConn net.PacketConn = punchConn
+	if s.geckoPassword != "" || s.salamanderPassword != "" {
+		qtls.SetDesiredBufferSizes(punchConn)
+	}
 	if s.geckoPassword != "" {
 		quicConn = NewGeckoConn(quicConn, []byte(s.geckoPassword), s.geckoMinPacketSize, s.geckoMaxPacketSize)
 	} else if s.salamanderPassword != "" {
