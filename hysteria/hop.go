@@ -65,9 +65,20 @@ func NewHopConn(
 		errChan:     make(chan error, 1),
 		doneChan:    make(chan struct{}),
 	}
-	currentConn, err := dialFunc(hopConn.nextAddr())
+	nextAddr := hopConn.nextAddr()
+	currentConn, err := dialFunc(nextAddr)
 	if err != nil {
 		return nil, err
+	}
+	if destination.IsFqdn() {
+		remoteAddr := M.SocksaddrFromNet(currentConn.RemoteAddr()).Unwrap()
+		if remoteAddr.IsIP() {
+			if remoteAddr.Port != nextAddr.Port {
+				currentConn.Close()
+				return nil, E.New("port hopping: remote address ", remoteAddr, " does not match destination ", nextAddr)
+			}
+			hopConn.destination = M.Socksaddr{Addr: remoteAddr.Addr}
+		}
 	}
 	hopConn.currentConn = currentConn
 	qtls.SetDesiredBufferSizes(currentConn)
