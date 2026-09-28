@@ -97,13 +97,13 @@ func (s *VectorisedSalamanderPacketConn) WriteVectorisedPacket(buffers []*buf.Bu
 	defer header.Release()
 	header.WriteRandom(salamanderSaltLen)
 	key := blake2b.Sum256(append(s.password, header.Bytes()...))
-	var bufferIndex int
+	var index int
 	for _, buffer := range buffers {
 		content := buffer.Bytes()
-		for index, c := range content {
-			content[bufferIndex+index] = c ^ key[bufferIndex+index%blake2b.Size256]
+		for i := range content {
+			content[i] ^= key[index%blake2b.Size256]
+			index++
 		}
-		bufferIndex += len(content)
 	}
 	return s.writer.WriteVectorisedPacket(append([]*buf.Buffer{header}, buffers...), destination)
 }
