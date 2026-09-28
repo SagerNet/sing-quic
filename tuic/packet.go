@@ -423,12 +423,12 @@ func (d *udpDefragger) feed(m *udpMessage) *udpMessage {
 	}
 	newMessage := allocMessage()
 	*newMessage = *item.messages[0]
-	var dataLength uint16
+	var dataLength int
 	for _, message := range item.messages {
-		dataLength += uint16(message.data.Len())
+		dataLength += message.data.Len()
 	}
 	if dataLength > 0 {
-		newMessage.data = buf.NewSize(int(dataLength))
+		newMessage.data = buf.NewSize(dataLength)
 		for _, message := range item.messages {
 			common.Must1(newMessage.data.Write(message.data.Bytes()))
 			message.releaseMessage()
