@@ -1,8 +1,6 @@
 package protocol
 
 import (
-	"bytes"
-	"encoding/binary"
 	"fmt"
 	"io"
 
@@ -148,76 +146,6 @@ func WriteTCPResponse(ok bool, msg string, payload []byte) *buf.Buffer {
 	buffer.Extend(paddingLen)
 	buffer.Write(payload)
 	return buffer
-}
-
-// UDPMessage format:
-// Session ID (uint32 BE)
-// Packet ID (uint16 BE)
-// Fragment ID (uint8)
-// Fragment count (uint8)
-// Address length (QUIC varint)
-// Address (bytes)
-// Data...
-
-type UDPMessage struct {
-	SessionID uint32 // 4
-	PacketID  uint16 // 2
-	FragID    uint8  // 1
-	FragCount uint8  // 1
-	Addr      string // varint + bytes
-	Data      []byte
-}
-
-func (m *UDPMessage) HeaderSize() int {
-	lAddr := len(m.Addr)
-	return 4 + 2 + 1 + 1 + int(quicvarint.Len(uint64(lAddr))) + lAddr
-}
-
-func (m *UDPMessage) Size() int {
-	return m.HeaderSize() + len(m.Data)
-}
-
-func (m *UDPMessage) Serialize(buf []byte) int {
-	// Make sure the buffer is big enough
-	if len(buf) < m.Size() {
-		return -1
-	}
-	binary.BigEndian.PutUint32(buf, m.SessionID)
-	binary.BigEndian.PutUint16(buf[4:], m.PacketID)
-	buf[6] = m.FragID
-	buf[7] = m.FragCount
-	i := varintPut(buf[8:], uint64(len(m.Addr)))
-	i += copy(buf[8+i:], m.Addr)
-	i += copy(buf[8+i:], m.Data)
-	return 8 + i
-}
-
-func ParseUDPMessage(msg []byte) (*UDPMessage, error) {
-	m := &UDPMessage{}
-	buf := bytes.NewBuffer(msg)
-	if err := binary.Read(buf, binary.BigEndian, &m.SessionID); err != nil {
-		return nil, err
-	}
-	if err := binary.Read(buf, binary.BigEndian, &m.PacketID); err != nil {
-		return nil, err
-	}
-	if err := binary.Read(buf, binary.BigEndian, &m.FragID); err != nil {
-		return nil, err
-	}
-	if err := binary.Read(buf, binary.BigEndian, &m.FragCount); err != nil {
-		return nil, err
-	}
-	lAddr, err := quicvarint.Read(buf)
-	if err != nil {
-		return nil, err
-	}
-	if lAddr == 0 || lAddr > MaxAddressLength {
-		return nil, E.New("invalid address length")
-	}
-	bs := buf.Bytes()
-	m.Addr = string(bs[:lAddr])
-	m.Data = bs[lAddr:]
-	return m, nil
 }
 
 func ReadVString(reader io.Reader) (string, error) {

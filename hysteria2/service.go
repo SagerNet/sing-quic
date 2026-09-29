@@ -356,7 +356,11 @@ func (s *serverSession[U]) handleStream(stream *quic.Stream) error {
 	if err != nil {
 		return E.New("read TCP request")
 	}
-	s.handler.NewConnectionEx(auth.ContextWithUser(s.ctx, s.authUser), &serverConn{Stream: stream}, M.SocksaddrFromNet(s.quicConn.RemoteAddr()).Unwrap(), M.ParseSocksaddr(destinationString).Unwrap(), nil)
+	destination := M.ParseSocksaddr(destinationString).Unwrap()
+	if len(destination.Fqdn) > 255 {
+		return E.New("fqdn too long")
+	}
+	s.handler.NewConnectionEx(auth.ContextWithUser(s.ctx, s.authUser), &serverConn{Stream: stream}, M.SocksaddrFromNet(s.quicConn.RemoteAddr()).Unwrap(), destination, nil)
 	return nil
 }
 

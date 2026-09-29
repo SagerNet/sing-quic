@@ -199,6 +199,9 @@ func (c *udpPacketConn) WritePacket(buffer *buf.Buffer, destination M.Socksaddr)
 	if !destination.IsValid() {
 		return E.New("invalid destination address")
 	}
+	if !destination.IsIP() && len(destination.Fqdn) > 255 {
+		return E.New("fqdn too long")
+	}
 	packetId := uint16(c.packetId.Add(1) % math.MaxUint16)
 	message := allocMessage()
 	*message = udpMessage{
@@ -210,7 +213,7 @@ func (c *udpPacketConn) WritePacket(buffer *buf.Buffer, destination M.Socksaddr)
 	}
 	defer message.releaseMessage()
 	var err error
-	if !c.udpStream && buffer.Len() > c.udpMTU-message.headerSize() {
+	if !c.udpStream && c.udpMTU > message.headerSize() && buffer.Len() > c.udpMTU-message.headerSize() {
 		err = c.writePackets(fragUDPMessage(message, c.udpMTU))
 	} else {
 		err = c.writePacket(message)
@@ -219,7 +222,7 @@ func (c *udpPacketConn) WritePacket(buffer *buf.Buffer, destination M.Socksaddr)
 		return nil
 	}
 	var tooLargeErr *quic.DatagramTooLargeError
-	if !errors.As(err, &tooLargeErr) {
+	if !errors.As(err, &tooLargeErr) || int(tooLargeErr.MaxDatagramPayloadSize)-3 <= message.headerSize() {
 		return err
 	}
 	c.udpMTU = int(tooLargeErr.MaxDatagramPayloadSize) - 3
@@ -239,6 +242,9 @@ func (c *udpPacketConn) WriteTo(p []byte, addr net.Addr) (n int, err error) {
 	if !destination.IsValid() {
 		return 0, E.New("invalid destination address")
 	}
+	if !destination.IsIP() && len(destination.Fqdn) > 255 {
+		return 0, E.New("fqdn too long")
+	}
 	packetId := uint16(c.packetId.Add(1) % math.MaxUint16)
 	message := allocMessage()
 	*message = udpMessage{
@@ -249,7 +255,7 @@ func (c *udpPacketConn) WriteTo(p []byte, addr net.Addr) (n int, err error) {
 		data:          buf.As(p),
 	}
 	defer message.releaseMessage()
-	if !c.udpStream && len(p) > c.udpMTU-message.headerSize() {
+	if !c.udpStream && c.udpMTU > message.headerSize() && len(p) > c.udpMTU-message.headerSize() {
 		err = c.writePackets(fragUDPMessage(message, c.udpMTU))
 		if err == nil {
 			return len(p), nil
@@ -261,7 +267,7 @@ func (c *udpPacketConn) WriteTo(p []byte, addr net.Addr) (n int, err error) {
 		return len(p), nil
 	}
 	var tooLargeErr *quic.DatagramTooLargeError
-	if !errors.As(err, &tooLargeErr) {
+	if !errors.As(err, &tooLargeErr) || int(tooLargeErr.MaxDatagramPayloadSize)-3 <= message.headerSize() {
 		return
 	}
 	c.udpMTU = int(tooLargeErr.MaxDatagramPayloadSize) - 3

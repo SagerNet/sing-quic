@@ -19,6 +19,7 @@ import (
 	"github.com/sagernet/sing/common"
 	"github.com/sagernet/sing/common/buf"
 	"github.com/sagernet/sing/common/cache"
+	E "github.com/sagernet/sing/common/exceptions"
 	M "github.com/sagernet/sing/common/metadata"
 	N "github.com/sagernet/sing/common/network"
 	"github.com/sagernet/sing/common/pipe"
@@ -187,6 +188,9 @@ func (c *udpPacketConn) WritePacket(buffer *buf.Buffer, destination M.Socksaddr)
 	if buffer.Len() > protocol.MaxUDPSize {
 		return &quic.DatagramTooLargeError{MaxDatagramPayloadSize: protocol.MaxUDPSize}
 	}
+	if !destination.IsIP() && len(destination.Fqdn) > 255 {
+		return E.New("fqdn too long")
+	}
 	packetId := uint16(c.packetId.Add(1) % math.MaxUint16)
 	message := allocMessage()
 	*message = udpMessage{
@@ -198,7 +202,7 @@ func (c *udpPacketConn) WritePacket(buffer *buf.Buffer, destination M.Socksaddr)
 	}
 	defer message.releaseMessage()
 	var err error
-	if buffer.Len() > c.udpMTU-message.headerSize() {
+	if c.udpMTU > message.headerSize() && buffer.Len() > c.udpMTU-message.headerSize() {
 		err = c.writePackets(fragUDPMessage(message, c.udpMTU))
 	} else {
 		err = c.writePacket(message)
@@ -207,7 +211,7 @@ func (c *udpPacketConn) WritePacket(buffer *buf.Buffer, destination M.Socksaddr)
 		return nil
 	}
 	var tooLargeErr *quic.DatagramTooLargeError
-	if !errors.As(err, &tooLargeErr) {
+	if !errors.As(err, &tooLargeErr) || int(tooLargeErr.MaxDatagramPayloadSize-3) <= message.headerSize() {
 		return err
 	}
 	return c.writePackets(fragUDPMessage(message, int(tooLargeErr.MaxDatagramPayloadSize-3)))
@@ -222,6 +226,10 @@ func (c *udpPacketConn) WriteTo(p []byte, addr net.Addr) (n int, err error) {
 	if len(p) > protocol.MaxUDPSize {
 		return 0, &quic.DatagramTooLargeError{MaxDatagramPayloadSize: protocol.MaxUDPSize}
 	}
+	destination := M.SocksaddrFromNet(addr)
+	if !destination.IsIP() && len(destination.Fqdn) > 255 {
+		return 0, E.New("fqdn too long")
+	}
 	packetId := uint16(c.packetId.Add(1) % math.MaxUint16)
 	message := allocMessage()
 	*message = udpMessage{
@@ -232,7 +240,7 @@ func (c *udpPacketConn) WriteTo(p []byte, addr net.Addr) (n int, err error) {
 		data:          buf.As(p),
 	}
 	defer message.releaseMessage()
-	if len(p) > c.udpMTU-message.headerSize() {
+	if c.udpMTU > message.headerSize() && len(p) > c.udpMTU-message.headerSize() {
 		err = c.writePackets(fragUDPMessage(message, c.udpMTU))
 		if err == nil {
 			return len(p), nil
@@ -244,7 +252,7 @@ func (c *udpPacketConn) WriteTo(p []byte, addr net.Addr) (n int, err error) {
 		return len(p), nil
 	}
 	var tooLargeErr *quic.DatagramTooLargeError
-	if !errors.As(err, &tooLargeErr) {
+	if !errors.As(err, &tooLargeErr) || int(tooLargeErr.MaxDatagramPayloadSize-3) <= message.headerSize() {
 		return
 	}
 	err = c.writePackets(fragUDPMessage(message, int(tooLargeErr.MaxDatagramPayloadSize-3)))
@@ -427,6 +435,9 @@ func decodeUDPMessage(message *udpMessage, data []byte) error {
 	message.destination, err = protocol.ReadVString(reader)
 	if err != nil {
 		return err
+	}
+	if len(message.destination) > 255 && len(M.ParseSocksaddr(message.destination).Fqdn) > 255 {
+		return E.New("fqdn too long")
 	}
 	message.data = buf.As(data[len(data)-reader.Len():])
 	return nil
