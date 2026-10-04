@@ -107,6 +107,7 @@ func (s *Service[U]) UpdateUsers(userList []U, passwordList []string) {
 
 func (s *Service[U]) Start(conn net.PacketConn) error {
 	if s.xplusPassword != "" {
+		qtls.SetDesiredBufferSizes(conn)
 		conn = NewXPlusPacketConn(conn, []byte(s.xplusPassword))
 	}
 	listener, err := qtls.Listen(conn, s.tlsConfig, s.quicConfig)
