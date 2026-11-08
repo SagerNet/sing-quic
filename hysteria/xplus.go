@@ -71,7 +71,11 @@ func (c *XPlusPacketConn) WriteTo(p []byte, addr net.Addr) (n int, err error) {
 	for i := range p {
 		common.Must(buffer.WriteByte(p[i] ^ key[i%sha256.Size]))
 	}
-	return c.PacketConn.WriteTo(buffer.Bytes(), addr)
+	_, err = c.PacketConn.WriteTo(buffer.Bytes(), addr)
+	if err != nil {
+		return
+	}
+	return len(p), nil
 }
 
 func (c *XPlusPacketConn) Upstream() any {
@@ -83,23 +87,8 @@ type VectorisedXPlusConn struct {
 	writer N.VectorisedPacketWriter
 }
 
-func (c *VectorisedXPlusConn) WriteTo(p []byte, addr net.Addr) (n int, err error) {
-	header := buf.NewSize(xplusSaltLen)
-	defer header.Release()
-	salt := header.Extend(xplusSaltLen)
-	c.randAccess.Lock()
-	_, _ = c.rand.Read(salt)
-	c.randAccess.Unlock()
-	key := sha256.Sum256(append(c.key, salt...))
-	for i := range p {
-		p[i] ^= key[i%sha256.Size]
-	}
-	return bufio.WriteVectorisedPacket(c.writer, [][]byte{header.Bytes(), p}, M.SocksaddrFromNet(addr))
-}
-
 func (c *VectorisedXPlusConn) WriteVectorisedPacket(buffers []*buf.Buffer, destination M.Socksaddr) error {
 	header := buf.NewSize(xplusSaltLen)
-	defer header.Release()
 	salt := header.Extend(xplusSaltLen)
 	c.randAccess.Lock()
 	_, _ = c.rand.Read(salt)
@@ -118,22 +107,10 @@ func (c *VectorisedXPlusConn) WriteVectorisedPacket(buffers []*buf.Buffer, desti
 }
 
 func NewXPlusClientConn(conn net.Conn, key []byte) net.Conn {
-	vectorisedWriter, isVectorised := bufio.CreateVectorisedWriter(conn)
-	if isVectorised {
-		return &VectorisedXPlusClientConn{
-			XPlusClientConn: XPlusClientConn{
-				Conn: conn,
-				key:  key[:len(key):len(key)],
-				rand: rand.New(rand.NewSource(time.Now().UnixNano())),
-			},
-			writer: vectorisedWriter,
-		}
-	} else {
-		return &XPlusClientConn{
-			Conn: conn,
-			key:  key[:len(key):len(key)],
-			rand: rand.New(rand.NewSource(time.Now().UnixNano())),
-		}
+	return &XPlusClientConn{
+		Conn: conn,
+		key:  key[:len(key):len(key)],
+		rand: rand.New(rand.NewSource(time.Now().UnixNano())),
 	}
 }
 
@@ -180,27 +157,4 @@ func (c *XPlusClientConn) Write(p []byte) (n int, err error) {
 
 func (c *XPlusClientConn) Upstream() any {
 	return c.Conn
-}
-
-type VectorisedXPlusClientConn struct {
-	XPlusClientConn
-	writer N.VectorisedWriter
-}
-
-func (c *VectorisedXPlusClientConn) Write(p []byte) (n int, err error) {
-	header := buf.NewSize(xplusSaltLen)
-	defer header.Release()
-	salt := header.Extend(xplusSaltLen)
-	c.randAccess.Lock()
-	_, _ = c.rand.Read(salt)
-	c.randAccess.Unlock()
-	key := sha256.Sum256(append(c.key, salt...))
-	for i := range p {
-		p[i] ^= key[i%sha256.Size]
-	}
-	_, err = bufio.WriteVectorised(c.writer, [][]byte{header.Bytes(), p})
-	if err != nil {
-		return
-	}
-	return len(p), nil
 }
