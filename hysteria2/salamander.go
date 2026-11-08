@@ -45,7 +45,7 @@ func (s *SalamanderPacketConn) ReadFrom(p []byte) (n int, addr net.Addr, err err
 		return
 	}
 	if n <= salamanderSaltLen {
-		return
+		return 0, addr, nil
 	}
 	key := blake2b.Sum256(append(s.password, p[:salamanderSaltLen]...))
 	for index, c := range p[salamanderSaltLen:n] {
@@ -111,7 +111,7 @@ func (s *SalamanderConn) Read(p []byte) (n int, err error) {
 		return
 	}
 	if n <= salamanderSaltLen {
-		return
+		return 0, nil
 	}
 	key := blake2b.Sum256(append(s.password, p[:salamanderSaltLen]...))
 	for index, c := range p[salamanderSaltLen:n] {
