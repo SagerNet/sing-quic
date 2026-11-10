@@ -79,7 +79,9 @@ func (b *BrutalSender) GetCongestionWindow() congestion.ByteCount {
 func (b *BrutalSender) OnPacketSent(sentTime monotime.Time, bytesInFlight congestion.ByteCount,
 	packetNumber congestion.PacketNumber, bytes congestion.ByteCount, isRetransmittable bool,
 ) {
-	b.pacer.SentPacket(sentTime, bytes)
+	if isRetransmittable {
+		b.pacer.SentPacket(sentTime, bytes)
+	}
 }
 
 func (b *BrutalSender) OnPacketAcked(number congestion.PacketNumber, ackedBytes congestion.ByteCount,

@@ -437,7 +437,9 @@ func (b *bbrSender) OnPacketSent(
 	bytes congestion.ByteCount,
 	isRetransmittable bool,
 ) {
-	b.pacer.SentPacket(sentTime, bytes)
+	if isRetransmittable {
+		b.pacer.SentPacket(sentTime, bytes)
+	}
 
 	b.lastSentPacket = packetNumber
 	b.bytesInFlight = bytesInFlight

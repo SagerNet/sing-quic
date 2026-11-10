@@ -45,7 +45,7 @@ func (s *SalamanderPacketConn) ReadFrom(p []byte) (n int, addr net.Addr, err err
 		return
 	}
 	if n <= salamanderSaltLen {
-		return
+		return 0, addr, nil
 	}
 	key := blake2b.Sum256(append(s.password, p[:salamanderSaltLen]...))
 	for index, c := range p[salamanderSaltLen:n] {
@@ -78,23 +78,8 @@ type VectorisedSalamanderPacketConn struct {
 	writer N.VectorisedPacketWriter
 }
 
-func (s *VectorisedSalamanderPacketConn) WriteTo(p []byte, addr net.Addr) (n int, err error) {
-	buffer := buf.NewSize(salamanderSaltLen)
-	buffer.WriteRandom(salamanderSaltLen)
-	key := blake2b.Sum256(append(s.password, buffer.Bytes()...))
-	for i := range p {
-		p[i] ^= key[i%blake2b.Size256]
-	}
-	err = s.writer.WriteVectorisedPacket([]*buf.Buffer{buffer, buf.As(p)}, M.SocksaddrFromNet(addr))
-	if err != nil {
-		return
-	}
-	return len(p), nil
-}
-
 func (s *VectorisedSalamanderPacketConn) WriteVectorisedPacket(buffers []*buf.Buffer, destination M.Socksaddr) error {
 	header := buf.NewSize(salamanderSaltLen)
-	defer header.Release()
 	header.WriteRandom(salamanderSaltLen)
 	key := blake2b.Sum256(append(s.password, header.Bytes()...))
 	var index int
@@ -114,20 +99,9 @@ type SalamanderConn struct {
 }
 
 func NewSalamanderClientConn(conn net.Conn, password []byte) net.Conn {
-	writer, isVectorised := bufio.CreateVectorisedWriter(conn)
-	if isVectorised {
-		return &VectorisedSalamanderConn{
-			SalamanderConn: SalamanderConn{
-				Conn:     conn,
-				password: password[:len(password):len(password)],
-			},
-			writer: writer,
-		}
-	} else {
-		return &SalamanderConn{
-			Conn:     conn,
-			password: password[:len(password):len(password)],
-		}
+	return &SalamanderConn{
+		Conn:     conn,
+		password: password[:len(password):len(password)],
 	}
 }
 
@@ -137,7 +111,7 @@ func (s *SalamanderConn) Read(p []byte) (n int, err error) {
 		return
 	}
 	if n <= salamanderSaltLen {
-		return
+		return 0, nil
 	}
 	key := blake2b.Sum256(append(s.password, p[:salamanderSaltLen]...))
 	for index, c := range p[salamanderSaltLen:n] {
@@ -163,24 +137,4 @@ func (s *SalamanderConn) Write(p []byte) (n int, err error) {
 
 func (s *SalamanderConn) Upstream() any {
 	return s.Conn
-}
-
-type VectorisedSalamanderConn struct {
-	SalamanderConn
-	writer N.VectorisedWriter
-}
-
-func (s *VectorisedSalamanderConn) Write(p []byte) (n int, err error) {
-	buffer := buf.NewSize(salamanderSaltLen)
-	defer buffer.Release()
-	buffer.WriteRandom(salamanderSaltLen)
-	key := blake2b.Sum256(append(s.password, buffer.Bytes()...))
-	for i := range p {
-		p[i] ^= key[i%blake2b.Size256]
-	}
-	_, err = bufio.WriteVectorised(s.writer, [][]byte{buffer.Bytes(), p})
-	if err != nil {
-		return
-	}
-	return len(p), nil
 }
