@@ -360,3 +360,23 @@ func KeepSessionFromContext(ctx context.Context) bool {
 	keep, _ := ctx.Value((*keepSessionKey)(nil)).(bool)
 	return keep
 }
+
+// CreationAdmission bounds one SHARED creation of a QUIC client connection.
+//
+// # Why a hook and why this shape
+//
+// The three clients (hysteria, hysteria2, TUIC) publish one connection and let concurrent demands
+// share the creation that is already in flight. A caller that bounds this process's creation storm
+// (resourceguard, a mobile network extension's budget) must be consulted exactly ONCE per creation,
+// not once per waiting request, or a burst of N flows is charged N times for one socket. The
+// creation is also the only place where the cost is: an established connection is reused without
+// any new socket, handshake or authentication.
+//
+// The hook OWNS the call: it must invoke create exactly once and return its error. A hook that
+// refuses must return its own error without calling create, and the shared offer fails as a whole -
+// waiters see the refusal instead of a silently opened connection. A nil hook admits everything and
+// is the previous behaviour.
+//
+// For TUIC this covers the authentication write too: `offerNew` performs it before returning, so
+// the authentication stage cannot fail after the creation was already accounted as successful.
+type CreationAdmission func(ctx context.Context, create func(context.Context) error) error

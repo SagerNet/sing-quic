@@ -39,6 +39,9 @@ type ClientOptions struct {
 	TLSConfig     aTLS.Config
 	QUICOptions   qtls.QUICOptions
 	UDPDisabled   bool
+	// AdmitCreation bounds the one shared creation this client performs at a time. See
+	// qtls.CreationAdmission: the hook is called once per creation, and nil admits everything.
+	AdmitCreation qtls.CreationAdmission
 }
 
 type Client struct {
@@ -56,6 +59,7 @@ type Client struct {
 	tlsConfig     aTLS.Config
 	quicConfig    *quic.Config
 	udpDisabled   bool
+	admitCreation qtls.CreationAdmission
 
 	connAccess sync.Mutex
 	conn       *clientQUICConnection
@@ -111,6 +115,7 @@ func NewClient(options ClientOptions) (*Client, error) {
 		tlsConfig:     options.TLSConfig,
 		quicConfig:    quicConfig,
 		udpDisabled:   options.UDPDisabled,
+		admitCreation: options.AdmitCreation,
 	}, nil
 }
 
@@ -203,7 +208,19 @@ func (c *Client) offerWithStream(ctx context.Context) (*clientQUICConnection, er
 }
 
 func (c *Client) completeOffer(pending *clientOffer, offerCtx context.Context) {
-	conn, err := c.offerNew(offerCtx)
+	var conn *clientQUICConnection
+	create := func(ctx context.Context) error {
+		var createErr error
+		conn, createErr = c.offerNew(ctx)
+		return createErr
+	}
+	var err error
+	if c.admitCreation != nil {
+		// One permit for the ONE shared creation, however many waiters joined it.
+		err = c.admitCreation(offerCtx, create)
+	} else {
+		err = create(offerCtx)
+	}
 	pending.cancel(nil)
 
 	discardErr := err

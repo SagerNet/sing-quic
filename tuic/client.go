@@ -32,6 +32,9 @@ type ClientOptions struct {
 	UDPStream         bool
 	ZeroRTTHandshake  bool
 	Heartbeat         time.Duration
+	// AdmitCreation bounds the one shared creation this client performs at a time. See
+	// qtls.CreationAdmission: the hook is called once per creation, and nil admits everything.
+	AdmitCreation qtls.CreationAdmission
 }
 
 type Client struct {
@@ -46,6 +49,7 @@ type Client struct {
 	udpStream         bool
 	zeroRTTHandshake  bool
 	heartbeat         time.Duration
+	admitCreation     qtls.CreationAdmission
 
 	connAccess sync.Mutex
 	conn       *clientQUICConnection
@@ -82,6 +86,7 @@ func NewClient(options ClientOptions) (*Client, error) {
 		udpStream:         options.UDPStream,
 		zeroRTTHandshake:  options.ZeroRTTHandshake,
 		heartbeat:         options.Heartbeat,
+		admitCreation:     options.AdmitCreation,
 	}, nil
 }
 
@@ -142,7 +147,20 @@ func (c *Client) offerWithStream(ctx context.Context) (*clientQUICConnection, er
 }
 
 func (c *Client) completeOffer(pending *clientOffer, offerCtx context.Context) {
-	conn, err := c.offerNew(offerCtx)
+	var conn *clientQUICConnection
+	create := func(ctx context.Context) error {
+		var createErr error
+		conn, createErr = c.offerNew(ctx)
+		return createErr
+	}
+	var err error
+	if c.admitCreation != nil {
+		// One permit for the ONE shared creation, however many waiters joined it. A cancelled
+		// waiter does not reach here: the offer is owned by the client lifetime.
+		err = c.admitCreation(offerCtx, create)
+	} else {
+		err = create(offerCtx)
+	}
 	pending.cancel(nil)
 
 	discardErr := err
@@ -195,12 +213,15 @@ func (c *Client) offerNew(ctx context.Context) (*clientQUICConnection, error) {
 		udpConnMap: make(map[uint16]*udpPacketConn),
 		closeIdle:  &c.closeIdle,
 	}
-	go func() {
-		hErr := c.clientHandshake(quicConn)
-		if hErr != nil {
-			conn.closeWithError(hErr)
-		}
-	}()
+	// The authentication write belongs to the CREATION. Running it here, before the offer is
+	// published, is what keeps the authentication stage inside the creation admission: a session
+	// that cannot authenticate is a failed creation, not a connection that succeeds and dies after
+	// the caller was charged for it. The write targets the just-established QUIC connection and
+	// waits for no server response, so this adds no round trip to the dial.
+	if hErr := c.clientHandshake(quicConn); hErr != nil {
+		conn.closeWithError(hErr)
+		return nil, E.Cause(hErr, "authenticate")
+	}
 	if c.udpStream {
 		go c.loopUniStreams(conn)
 	}
