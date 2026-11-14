@@ -1,7 +1,6 @@
 package realm
 
 import (
-	"errors"
 	"net"
 	"net/netip"
 	"sync"
@@ -23,7 +22,6 @@ type STUNPacketEvent struct {
 
 type PunchPacketConn struct {
 	net.PacketConn
-	udp        *net.UDPConn
 	access     sync.RWMutex
 	attempts   map[string]PunchMetadata
 	events     chan PunchPacketEvent
@@ -31,28 +29,12 @@ type PunchPacketConn struct {
 }
 
 func NewPunchPacketConn(conn net.PacketConn, eventBuffer int) *PunchPacketConn {
-	udp, _ := conn.(*net.UDPConn)
 	return &PunchPacketConn{
 		PacketConn: conn,
-		udp:        udp,
 		attempts:   make(map[string]PunchMetadata),
 		events:     make(chan PunchPacketEvent, eventBuffer),
 		stunEvents: make(chan STUNPacketEvent, eventBuffer),
 	}
-}
-
-func (c *PunchPacketConn) SetReadBuffer(bytes int) error {
-	if c.udp == nil {
-		return errors.ErrUnsupported
-	}
-	return c.udp.SetReadBuffer(bytes)
-}
-
-func (c *PunchPacketConn) SetWriteBuffer(bytes int) error {
-	if c.udp == nil {
-		return errors.ErrUnsupported
-	}
-	return c.udp.SetWriteBuffer(bytes)
 }
 
 func (c *PunchPacketConn) ReadFrom(p []byte) (int, net.Addr, error) {

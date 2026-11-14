@@ -266,9 +266,6 @@ func (c *Client) offerNew(ctx context.Context) (*clientQUICConnection, error) {
 		if err != nil {
 			return nil, err
 		}
-		if c.xplusPassword != "" {
-			qtls.SetDesiredBufferSizes(rawConn)
-		}
 	} else {
 		rawConn, err = NewHopConn(dialFunc, c.serverAddr, c.serverPorts, c.hopInterval, 0)
 		if err != nil {

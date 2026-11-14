@@ -5,7 +5,7 @@ go 1.25.0
 require (
 	github.com/gofrs/uuid/v5 v5.5.1
 	github.com/libp2p/go-nat v1.0.1-0.20250821073202-01afc089f138
-	github.com/sagernet/quic-go v0.61.0-sing-box-mod.6
+	github.com/sagernet/quic-go v0.61.0-sing-box-mod.14
 	github.com/sagernet/sing v0.9.0-beta.4
 	golang.org/x/crypto v0.54.0
 	golang.org/x/exp v0.0.0-20250911091902-df9299821621

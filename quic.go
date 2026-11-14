@@ -78,20 +78,15 @@ func ApplyQUICOptions(quicConfig *quic.Config, options QUICOptions) {
 }
 
 func SetDesiredBufferSizes(conn any) {
-	// quic-go's internal protocol.DesiredReceiveBufferSize and protocol.DesiredSendBufferSize.
-	const desiredUDPBufferSize = 8 << 20
-	readCapable, canSetReadBuffer := common.Cast[interface {
-		SetReadBuffer(bytes int) error
-	}](conn)
-	if canSetReadBuffer {
-		_ = readCapable.SetReadBuffer(desiredUDPBufferSize)
+	socket, isSyscallConn := common.Cast[syscall.Conn](conn)
+	if !isSyscallConn {
+		return
 	}
-	writeCapable, canSetWriteBuffer := common.Cast[interface {
-		SetWriteBuffer(bytes int) error
-	}](conn)
-	if canSetWriteBuffer {
-		_ = writeCapable.SetWriteBuffer(desiredUDPBufferSize)
+	rawConn, err := socket.SyscallConn()
+	if err != nil {
+		return
 	}
+	quic.SetDesiredBufferSizes(rawConn)
 }
 
 var _ quic.IOActivityConn = (*syscallConn)(nil)
@@ -127,6 +122,7 @@ func withSyscallConn(conn net.Conn) net.Conn {
 	reader, readCounters := N.UnwrapCountReader(conn, nil)
 	socket, isSyscallConn := reader.(syscall.Conn)
 	if !isSyscallConn {
+		SetDesiredBufferSizes(conn)
 		return conn
 	}
 	_, writeCounters := N.UnwrapCountWriter(conn, nil)
@@ -220,6 +216,9 @@ func CreateTransport(conn net.Conn, quicConnPtr **quic.Conn, config aTLS.Config,
 }
 
 func CreatePacketTransport(conn net.PacketConn, remoteAddr net.Addr, quicConnPtr **quic.Conn, config aTLS.Config, quicConfig *quic.Config) (http.RoundTripper, error) {
+	if _, isSyscallConn := conn.(syscall.Conn); !isSyscallConn {
+		SetDesiredBufferSizes(conn)
+	}
 	handshakeTimeout := config.HandshakeTimeout()
 	quicConfig = quicConfigWithHandshakeTimeout(quicConfig, handshakeTimeout)
 	if quicTLSConfig, isQUICConfig := config.(Config); isQUICConfig {
@@ -254,6 +253,9 @@ func Listen(conn net.PacketConn, config aTLS.ServerConfig, quicConfig *quic.Conf
 }
 
 func ListenWithOptions(conn net.PacketConn, config aTLS.ServerConfig, quicConfig *quic.Config, options ListenOptions) (Listener, error) {
+	if _, isSyscallConn := conn.(syscall.Conn); !isSyscallConn {
+		SetDesiredBufferSizes(conn)
+	}
 	quicConfig = quicConfigWithHandshakeTimeout(quicConfig, config.HandshakeTimeout())
 	if quicTLSConfig, isQUICConfig := config.(ServerConfig); isQUICConfig {
 		listener, err := quicTLSConfig.Listen(conn, quicConfig)
@@ -281,6 +283,9 @@ func ListenEarly(conn net.PacketConn, config aTLS.ServerConfig, quicConfig *quic
 }
 
 func ListenEarlyWithOptions(conn net.PacketConn, config aTLS.ServerConfig, quicConfig *quic.Config, options ListenOptions) (EarlyListener, error) {
+	if _, isSyscallConn := conn.(syscall.Conn); !isSyscallConn {
+		SetDesiredBufferSizes(conn)
+	}
 	quicConfig = quicConfigWithHandshakeTimeout(quicConfig, config.HandshakeTimeout())
 	if quicTLSConfig, isQUICConfig := config.(ServerConfig); isQUICConfig {
 		listener, err := quicTLSConfig.ListenEarly(conn, quicConfig)

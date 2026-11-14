@@ -297,9 +297,6 @@ func (c *Client) offerNew(ctx context.Context) (*clientQUICConnection, error) {
 		if err != nil {
 			return nil, err
 		}
-		if c.geckoPassword != "" || c.salamanderPassword != "" {
-			qtls.SetDesiredBufferSizes(rawConn)
-		}
 	} else {
 		rawConn, err = hysteria.NewHopConn(dialFunc, c.serverAddr, c.serverPorts, c.hopInterval, c.hopIntervalMax)
 		if err != nil {
@@ -384,9 +381,6 @@ func (c *Client) offerNewRealm(ctx context.Context) (*clientQUICConnection, erro
 		return nil, err
 	}
 	packetConn := winner.conn
-	if c.geckoPassword != "" || c.salamanderPassword != "" {
-		qtls.SetDesiredBufferSizes(packetConn)
-	}
 	if c.geckoPassword != "" {
 		packetConn = NewGeckoConn(packetConn, []byte(c.geckoPassword), c.geckoMinPacketSize, c.geckoMaxPacketSize)
 	} else if c.salamanderPassword != "" {
