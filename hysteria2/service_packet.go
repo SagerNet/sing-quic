@@ -42,11 +42,19 @@ func (s *serverSession[U]) handleUDPMessage(message *udpMessage) {
 	if !loaded || common.Done(udpConn.ctx) {
 		udpConn = newUDPPacketConn(auth.ContextWithUser(s.ctx, s.authUser), s.quicConn, func() {
 			s.udpAccess.Lock()
-			delete(s.udpConnMap, sessionID)
+			if s.udpConnMap[sessionID] == udpConn {
+				delete(s.udpConnMap, sessionID)
+			}
 			s.udpAccess.Unlock()
 		})
 		udpConn.sessionID = sessionID
 		s.udpAccess.Lock()
+		if s.ctx.Err() != nil {
+			s.udpAccess.Unlock()
+			udpConn.closeWithError(s.ctx.Err())
+			message.releaseMessage()
+			return
+		}
 		s.udpConnMap[sessionID] = udpConn
 		s.udpAccess.Unlock()
 		newCtx, newConn := canceler.NewPacketConn(udpConn.ctx, udpConn, s.udpTimeout)
