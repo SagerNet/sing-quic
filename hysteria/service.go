@@ -106,10 +106,11 @@ func (s *Service[U]) UpdateUsers(userList []U, passwordList []string) {
 }
 
 func (s *Service[U]) Start(conn net.PacketConn) error {
+	var options qtls.ListenOptions
 	if s.xplusPassword != "" {
-		conn = NewXPlusPacketConn(conn, []byte(s.xplusPassword))
+		options.PacketCodec = NewXPlusCodec([]byte(s.xplusPassword))
 	}
-	listener, err := qtls.Listen(conn, s.tlsConfig, s.quicConfig)
+	listener, err := qtls.ListenWithOptions(conn, s.tlsConfig, s.quicConfig, options)
 	if err != nil {
 		return err
 	}

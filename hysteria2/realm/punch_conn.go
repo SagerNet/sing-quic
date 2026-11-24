@@ -37,52 +37,38 @@ func NewPunchPacketConn(conn net.PacketConn, eventBuffer int) *PunchPacketConn {
 	}
 }
 
-func (c *PunchPacketConn) ReadFrom(p []byte) (int, net.Addr, error) {
-	for {
-		n, addr, err := c.PacketConn.ReadFrom(p)
-		if err != nil {
-			return n, addr, err
-		}
-		data := p[:n]
-		if stun.IsMessage(data) {
-			message, decodeErr := stun.Decode(data)
-			address := M.SocksaddrFromNet(addr).Unwrap().AddrPort()
-			if decodeErr == nil && address.IsValid() {
-				select {
-				case c.stunEvents <- STUNPacketEvent{Message: message, Address: address}:
-				default:
-				}
+func (c *PunchPacketConn) InterceptPacket(b []byte, addr net.Addr) bool {
+	if stun.IsMessage(b) {
+		message, decodeErr := stun.Decode(b)
+		address := M.SocksaddrFromNet(addr).Unwrap().AddrPort()
+		if decodeErr == nil && address.IsValid() {
+			select {
+			case c.stunEvents <- STUNPacketEvent{Message: message, Address: address}:
+			default:
 			}
-			continue
 		}
-		c.access.RLock()
-		if len(c.attempts) == 0 {
-			c.access.RUnlock()
-			return n, addr, nil
-		}
-		matched := false
-		from := M.SocksaddrFromNet(addr).Unwrap().AddrPort()
-		addressOK := from.IsValid()
-		for attemptID, metadata := range c.attempts {
-			packetType, decodeErr := DecodePunchPacket(data, metadata)
-			if decodeErr != nil {
-				continue
-			}
-			if addressOK {
-				select {
-				case c.events <- PunchPacketEvent{AttemptID: attemptID, From: from, Type: packetType}:
-				default:
-				}
-			}
-			matched = true
-			break
-		}
-		c.access.RUnlock()
-		if matched {
-			continue
-		}
-		return n, addr, nil
+		return true
 	}
+	c.access.RLock()
+	defer c.access.RUnlock()
+	if len(c.attempts) == 0 {
+		return false
+	}
+	from := M.SocksaddrFromNet(addr).Unwrap().AddrPort()
+	for attemptID, metadata := range c.attempts {
+		packetType, decodeErr := DecodePunchPacket(b, metadata)
+		if decodeErr != nil {
+			continue
+		}
+		if from.IsValid() {
+			select {
+			case c.events <- PunchPacketEvent{AttemptID: attemptID, From: from, Type: packetType}:
+			default:
+			}
+		}
+		return true
+	}
+	return false
 }
 
 func (c *PunchPacketConn) AddAttempt(id string, metadata PunchMetadata) {

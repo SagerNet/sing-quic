@@ -157,53 +157,32 @@ func (s *Service[U]) UpdateUsers(userList []U, passwordList []string) {
 }
 
 func (s *Service[U]) Start(conn net.PacketConn) error {
-	if s.realmServer != nil {
-		return s.startWithRealm(conn)
-	}
-	if s.geckoPassword != "" {
-		conn = NewGeckoConn(conn, []byte(s.geckoPassword), s.geckoMinPacketSize, s.geckoMaxPacketSize)
-	} else if s.salamanderPassword != "" {
-		conn = NewSalamanderConn(conn, []byte(s.salamanderPassword))
-	}
 	err := qtls.ConfigureHTTP3(s.tlsConfig)
 	if err != nil {
 		return err
 	}
-	obfsEnabled := s.geckoPassword != "" || s.salamanderPassword != ""
-	listener, err := qtls.ListenWithOptions(conn, s.tlsConfig, s.quicConfig, qtls.ListenOptions{
-		DisableVersionNegotiationPackets: obfsEnabled,
-		StatelessReset:                   !obfsEnabled,
-	})
-	if err != nil {
-		return err
-	}
-	s.quicListener = listener
-	go s.loopConnections(listener)
-	return nil
-}
-
-func (s *Service[U]) startWithRealm(conn net.PacketConn) error {
-	punchConn, err := s.realmServer.Start(s.ctx, conn)
-	if err != nil {
-		return E.Cause(err, "start realm server")
-	}
-	var quicConn net.PacketConn = punchConn
+	var options qtls.ListenOptions
 	if s.geckoPassword != "" {
-		quicConn = NewGeckoConn(quicConn, []byte(s.geckoPassword), s.geckoMinPacketSize, s.geckoMaxPacketSize)
+		options.PacketCodec = NewGeckoCodec([]byte(s.geckoPassword), s.geckoMinPacketSize, s.geckoMaxPacketSize)
 	} else if s.salamanderPassword != "" {
-		quicConn = NewSalamanderConn(quicConn, []byte(s.salamanderPassword))
+		options.PacketCodec = NewSalamanderCodec([]byte(s.salamanderPassword))
 	}
-	err = qtls.ConfigureHTTP3(s.tlsConfig)
-	if err != nil {
-		return E.Errors(err, s.realmServer.Close())
+	options.DisableVersionNegotiationPackets = options.PacketCodec != nil
+	options.StatelessReset = options.PacketCodec == nil
+	if s.realmServer != nil {
+		var punchConn *realm.PunchPacketConn
+		punchConn, err = s.realmServer.Start(s.ctx, conn)
+		if err != nil {
+			return E.Cause(err, "start realm server")
+		}
+		options.PacketInterceptor = punchConn.InterceptPacket
 	}
-	obfsEnabled := s.geckoPassword != "" || s.salamanderPassword != ""
-	listener, err := qtls.ListenWithOptions(quicConn, s.tlsConfig, s.quicConfig, qtls.ListenOptions{
-		DisableVersionNegotiationPackets: obfsEnabled,
-		StatelessReset:                   !obfsEnabled,
-	})
+	listener, err := qtls.ListenWithOptions(conn, s.tlsConfig, s.quicConfig, options)
 	if err != nil {
-		return E.Errors(err, s.realmServer.Close())
+		if s.realmServer != nil {
+			return E.Errors(err, s.realmServer.Close())
+		}
+		return err
 	}
 	s.quicListener = listener
 	go s.loopConnections(listener)

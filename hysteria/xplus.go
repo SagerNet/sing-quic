@@ -9,101 +9,48 @@ import (
 
 	"github.com/sagernet/sing/common"
 	"github.com/sagernet/sing/common/buf"
-	"github.com/sagernet/sing/common/bufio"
-	M "github.com/sagernet/sing/common/metadata"
-	N "github.com/sagernet/sing/common/network"
 )
 
 const xplusSaltLen = 16
 
-func NewXPlusPacketConn(conn net.PacketConn, key []byte) net.PacketConn {
-	vectorisedWriter, isVectorised := bufio.CreateVectorisedPacketWriter(conn)
-	if isVectorised {
-		return &VectorisedXPlusConn{
-			XPlusPacketConn: XPlusPacketConn{
-				PacketConn: conn,
-				key:        key[:len(key):len(key)],
-				rand:       rand.New(rand.NewSource(time.Now().UnixNano())),
-			},
-			writer: vectorisedWriter,
-		}
-	} else {
-		return &XPlusPacketConn{
-			PacketConn: conn,
-			key:        key[:len(key):len(key)],
-			rand:       rand.New(rand.NewSource(time.Now().UnixNano())),
-		}
-	}
-}
-
-type XPlusPacketConn struct {
-	net.PacketConn
+type XPlusCodec struct {
 	key        []byte
 	randAccess sync.Mutex
 	rand       *rand.Rand
 }
 
-func (c *XPlusPacketConn) ReadFrom(p []byte) (n int, addr net.Addr, err error) {
-	n, addr, err = c.PacketConn.ReadFrom(p)
-	if err != nil {
-		return
-	} else if n < xplusSaltLen {
-		n = 0
-		return
+func NewXPlusCodec(key []byte) *XPlusCodec {
+	return &XPlusCodec{
+		key:  key[:len(key):len(key)],
+		rand: rand.New(rand.NewSource(time.Now().UnixNano())),
 	}
-	key := sha256.Sum256(append(c.key, p[:xplusSaltLen]...))
-	for i := range n - xplusSaltLen {
-		p[i] = p[xplusSaltLen+i] ^ key[i%sha256.Size]
-	}
-	n -= xplusSaltLen
-	return
 }
 
-func (c *XPlusPacketConn) WriteTo(p []byte, addr net.Addr) (n int, err error) {
-	// can't use unsafe buffer on WriteTo
-	buffer := buf.NewSize(len(p) + xplusSaltLen)
+func (c *XPlusCodec) Encode(b []byte, write func(datagram []byte) error) error {
+	buffer := buf.NewSize(xplusSaltLen + len(b))
 	defer buffer.Release()
 	salt := buffer.Extend(xplusSaltLen)
 	c.randAccess.Lock()
 	_, _ = c.rand.Read(salt)
 	c.randAccess.Unlock()
 	key := sha256.Sum256(append(c.key, salt...))
-	for i := range p {
-		common.Must(buffer.WriteByte(p[i] ^ key[i%sha256.Size]))
+	data := buffer.Extend(len(b))
+	for i := range b {
+		data[i] = b[i] ^ key[i%sha256.Size]
 	}
-	_, err = c.PacketConn.WriteTo(buffer.Bytes(), addr)
-	if err != nil {
-		return
-	}
-	return len(p), nil
+	return write(buffer.Bytes())
 }
 
-func (c *XPlusPacketConn) Upstream() any {
-	return c.PacketConn
-}
-
-type VectorisedXPlusConn struct {
-	XPlusPacketConn
-	writer N.VectorisedPacketWriter
-}
-
-func (c *VectorisedXPlusConn) WriteVectorisedPacket(buffers []*buf.Buffer, destination M.Socksaddr) error {
-	header := buf.NewSize(xplusSaltLen)
-	salt := header.Extend(xplusSaltLen)
-	c.randAccess.Lock()
-	_, _ = c.rand.Read(salt)
-	c.randAccess.Unlock()
-	key := sha256.Sum256(append(c.key, salt...))
-	var index int
-	for _, buffer := range buffers {
-		data := buffer.Bytes()
-		for i := range data {
-			data[i] ^= key[index%sha256.Size]
-			index++
-		}
+func (c *XPlusCodec) Decode(b []byte, _ net.Addr) ([]byte, bool) {
+	if len(b) <= xplusSaltLen {
+		return nil, false
 	}
-	buffers = append([]*buf.Buffer{header}, buffers...)
-	return c.writer.WriteVectorisedPacket(buffers, destination)
+	key := sha256.Sum256(append(c.key, b[:xplusSaltLen]...))
+	data := b[xplusSaltLen:]
+	for i := range data {
+		data[i] ^= key[i%sha256.Size]
+	}
+	return data, true
 }
 
 func NewXPlusClientConn(conn net.Conn, key []byte) net.Conn {

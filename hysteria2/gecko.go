@@ -26,16 +26,14 @@ const (
 	geckoMaxPerSource         = 8
 )
 
-type GeckoPacketConn struct {
-	net.PacketConn
+type GeckoCodec struct {
+	salamander    *SalamanderCodec
 	minPacketSize int
 	maxPacketSize int
 	msgIDCounter  atomic.Uint32
 
-	readAccess       sync.Mutex
-	reassemblyAccess sync.Mutex
-	reassembly       map[geckoReassemblyKey]*geckoReassemblyEntry
-	perSource        map[string]int
+	reassembly map[geckoReassemblyKey]*geckoReassemblyEntry
+	perSource  map[string]int
 
 	lastSweep time.Time
 }
@@ -52,43 +50,34 @@ type geckoReassemblyEntry struct {
 	deadline time.Time
 }
 
-func NewGeckoConn(conn net.PacketConn, password []byte, minPacketSize, maxPacketSize int) net.PacketConn {
-	g := &GeckoPacketConn{
-		PacketConn:    NewSalamanderConn(conn, password),
+func NewGeckoCodec(password []byte, minPacketSize, maxPacketSize int) *GeckoCodec {
+	return &GeckoCodec{
+		salamander:    NewSalamanderCodec(password),
 		minPacketSize: minPacketSize,
 		maxPacketSize: maxPacketSize,
 		reassembly:    make(map[geckoReassemblyKey]*geckoReassemblyEntry),
 		perSource:     make(map[string]int),
 		lastSweep:     time.Now(),
 	}
-	return g
 }
 
-func (g *GeckoPacketConn) Upstream() any {
-	return g.PacketConn
-}
-
-func (g *GeckoPacketConn) WriteTo(p []byte, addr net.Addr) (int, error) {
-	if len(p) == 0 {
-		return 0, nil
+func (g *GeckoCodec) Encode(b []byte, write func(datagram []byte) error) error {
+	if len(b) == 0 {
+		return nil
 	}
-	if p[0]&geckoFragmentFlag == 0 {
-		return g.PacketConn.WriteTo(p, addr)
+	if b[0]&geckoFragmentFlag == 0 {
+		return g.salamander.Encode(b, write)
 	}
-	return g.writeFragmented(p, addr)
-}
-
-func (g *GeckoPacketConn) writeFragmented(p []byte, addr net.Addr) (int, error) {
 	chunks := geckoMinChunks + rand2.IntN(geckoMaxChunks-geckoMinChunks+1)
-	chunkSize := len(p) / chunks
+	chunkSize := len(b) / chunks
 	msgID := uint8(g.msgIDCounter.Add(1))
 	for i := 0; i < chunks; i++ {
 		start := i * chunkSize
-		end := len(p)
+		end := len(b)
 		if i < chunks-1 {
 			end = start + chunkSize
 		}
-		chunk := p[start:end]
+		chunk := b[start:end]
 		padLen := g.randomPadLen(len(chunk))
 		frame := make([]byte, geckoHeaderLen+int(padLen)+len(chunk))
 		frame[0] = geckoFragmentFlag
@@ -98,19 +87,19 @@ func (g *GeckoPacketConn) writeFragmented(p []byte, addr net.Addr) (int, error) 
 		if padLen > 0 {
 			_, randErr := rand.Read(frame[geckoHeaderLen : geckoHeaderLen+int(padLen)])
 			if randErr != nil {
-				return 0, randErr
+				return randErr
 			}
 		}
 		copy(frame[geckoHeaderLen+int(padLen):], chunk)
-		_, err := g.PacketConn.WriteTo(frame, addr)
+		err := g.salamander.Encode(frame, write)
 		if err != nil {
-			return 0, err
+			return err
 		}
 	}
-	return len(p), nil
+	return nil
 }
 
-func (g *GeckoPacketConn) randomPadLen(chunkLen int) uint16 {
+func (g *GeckoCodec) randomPadLen(chunkLen int) uint16 {
 	base := salamanderSaltLen + geckoHeaderLen + chunkLen
 	lo := g.minPacketSize
 	if base > lo {
@@ -122,55 +111,56 @@ func (g *GeckoPacketConn) randomPadLen(chunkLen int) uint16 {
 	return uint16(lo - base + rand2.IntN(g.maxPacketSize-lo+1))
 }
 
-func (g *GeckoPacketConn) ReadFrom(p []byte) (int, net.Addr, error) {
-	g.readAccess.Lock()
-	defer g.readAccess.Unlock()
-	for {
-		n, addr, err := g.PacketConn.ReadFrom(p)
-		if err != nil {
-			return n, addr, err
-		}
-		if n == 0 {
-			continue
-		}
-		if p[0]&geckoFragmentFlag == 0 {
-			return n, addr, nil
-		}
-		if n < geckoHeaderLen {
-			continue
-		}
-		msgID := p[1]
-		chunkIdx := p[2] >> 4
-		totalChunks := p[2] & 0x0f
-		padLen := binary.BigEndian.Uint16(p[3:5])
-		if totalChunks < geckoMinChunks || totalChunks > geckoMaxChunks {
-			continue
-		}
-		if chunkIdx >= totalChunks {
-			continue
-		}
-		payloadStart := geckoHeaderLen + int(padLen)
-		if payloadStart > n {
-			continue
-		}
-		out, ready := g.acceptChunk(addr, msgID, chunkIdx, totalChunks, p[payloadStart:n])
-		if !ready {
-			continue
-		}
-		return copy(p, out), addr, nil
+func (g *GeckoCodec) Decode(b []byte, addr net.Addr) ([]byte, bool) {
+	data, decoded := g.salamander.Decode(b, addr)
+	if !decoded {
+		return nil, false
 	}
+	if data[0]&geckoFragmentFlag == 0 {
+		return data, true
+	}
+	if len(data) < geckoHeaderLen {
+		return nil, false
+	}
+	msgID := data[1]
+	chunkIdx := data[2] >> 4
+	totalChunks := data[2] & 0x0f
+	padLen := binary.BigEndian.Uint16(data[3:5])
+	if totalChunks < geckoMinChunks || totalChunks > geckoMaxChunks {
+		return nil, false
+	}
+	if chunkIdx >= totalChunks {
+		return nil, false
+	}
+	payloadStart := geckoHeaderLen + int(padLen)
+	if payloadStart > len(data) {
+		return nil, false
+	}
+	chunks, ready := g.acceptChunk(addr, msgID, chunkIdx, totalChunks, data[payloadStart:])
+	if !ready {
+		return nil, false
+	}
+	var packetLen int
+	for _, chunk := range chunks {
+		packetLen += len(chunk)
+	}
+	if packetLen > cap(b) {
+		return nil, false
+	}
+	packet := b[:0]
+	for _, chunk := range chunks {
+		packet = append(packet, chunk...)
+	}
+	return packet, true
 }
 
-func (g *GeckoPacketConn) acceptChunk(addr net.Addr, msgID, chunkIdx, totalChunks uint8, payload []byte) ([]byte, bool) {
+func (g *GeckoCodec) acceptChunk(addr net.Addr, msgID, chunkIdx, totalChunks uint8, payload []byte) ([][]byte, bool) {
 	addrString := addr.String()
 	key := geckoReassemblyKey{addr: addrString, msgID: msgID}
 
-	g.reassemblyAccess.Lock()
-	defer g.reassemblyAccess.Unlock()
-
 	now := time.Now()
 	if now.Sub(g.lastSweep) >= geckoReassemblyTTL/2 {
-		g.sweepExpiredLocked(now)
+		g.sweepExpired(now)
 	}
 
 	entry, loaded := g.reassembly[key]
@@ -179,7 +169,7 @@ func (g *GeckoPacketConn) acceptChunk(addr net.Addr, msgID, chunkIdx, totalChunk
 			return nil, false
 		}
 		if len(g.reassembly) >= geckoMaxReassembly {
-			g.evictOldestLocked()
+			g.evictOldest()
 		}
 		entry = &geckoReassemblyEntry{
 			chunks:   make([][]byte, totalChunks),
@@ -202,12 +192,11 @@ func (g *GeckoPacketConn) acceptChunk(addr net.Addr, msgID, chunkIdx, totalChunk
 	if entry.received < int(entry.total) {
 		return nil, false
 	}
-	out := slices.Concat(entry.chunks...)
-	g.dropEntryLocked(key)
-	return out, true
+	g.dropEntry(key)
+	return entry.chunks, true
 }
 
-func (g *GeckoPacketConn) dropEntryLocked(key geckoReassemblyKey) {
+func (g *GeckoCodec) dropEntry(key geckoReassemblyKey) {
 	_, loaded := g.reassembly[key]
 	if !loaded {
 		return
@@ -219,7 +208,7 @@ func (g *GeckoPacketConn) dropEntryLocked(key geckoReassemblyKey) {
 	}
 }
 
-func (g *GeckoPacketConn) evictOldestLocked() {
+func (g *GeckoCodec) evictOldest() {
 	var oldestKey geckoReassemblyKey
 	var oldestDeadline time.Time
 	first := true
@@ -231,21 +220,60 @@ func (g *GeckoPacketConn) evictOldestLocked() {
 		}
 	}
 	if !first {
-		g.dropEntryLocked(oldestKey)
+		g.dropEntry(oldestKey)
 	}
 }
 
-func (g *GeckoPacketConn) sweepExpiredLocked(now time.Time) {
+func (g *GeckoCodec) sweepExpired(now time.Time) {
 	for key, entry := range g.reassembly {
 		if now.After(entry.deadline) {
-			g.dropEntryLocked(key)
+			g.dropEntry(key)
 		}
 	}
 	g.lastSweep = now
 }
 
-func (g *GeckoPacketConn) Close() error {
-	return g.PacketConn.Close()
+type GeckoPacketConn struct {
+	net.PacketConn
+	codec      *GeckoCodec
+	readAccess sync.Mutex
+}
+
+func NewGeckoConn(conn net.PacketConn, password []byte, minPacketSize, maxPacketSize int) net.PacketConn {
+	return &GeckoPacketConn{
+		PacketConn: conn,
+		codec:      NewGeckoCodec(password, minPacketSize, maxPacketSize),
+	}
+}
+
+func (g *GeckoPacketConn) ReadFrom(p []byte) (int, net.Addr, error) {
+	g.readAccess.Lock()
+	defer g.readAccess.Unlock()
+	for {
+		n, addr, err := g.PacketConn.ReadFrom(p)
+		if err != nil {
+			return n, addr, err
+		}
+		packet, decoded := g.codec.Decode(p[:n:len(p)], addr)
+		if decoded {
+			return copy(p, packet), addr, nil
+		}
+	}
+}
+
+func (g *GeckoPacketConn) WriteTo(p []byte, addr net.Addr) (int, error) {
+	err := g.codec.Encode(p, func(datagram []byte) error {
+		_, err := g.PacketConn.WriteTo(datagram, addr)
+		return err
+	})
+	if err != nil {
+		return 0, err
+	}
+	return len(p), nil
+}
+
+func (g *GeckoPacketConn) Upstream() any {
+	return g.PacketConn
 }
 
 type GeckoConn struct {

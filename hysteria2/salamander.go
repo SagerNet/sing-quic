@@ -16,6 +16,38 @@ const salamanderSaltLen = 8
 
 const ObfsTypeSalamander = "salamander"
 
+type SalamanderCodec struct {
+	password []byte
+}
+
+func NewSalamanderCodec(password []byte) *SalamanderCodec {
+	return &SalamanderCodec{password: password[:len(password):len(password)]}
+}
+
+func (c *SalamanderCodec) Encode(b []byte, write func(datagram []byte) error) error {
+	buffer := buf.NewSize(salamanderSaltLen + len(b))
+	defer buffer.Release()
+	salt := buffer.WriteRandom(salamanderSaltLen)
+	key := blake2b.Sum256(append(c.password, salt...))
+	data := buffer.Extend(len(b))
+	for i := range b {
+		data[i] = b[i] ^ key[i%blake2b.Size256]
+	}
+	return write(buffer.Bytes())
+}
+
+func (c *SalamanderCodec) Decode(b []byte, _ net.Addr) ([]byte, bool) {
+	if len(b) <= salamanderSaltLen {
+		return nil, false
+	}
+	key := blake2b.Sum256(append(c.password, b[:salamanderSaltLen]...))
+	data := b[salamanderSaltLen:]
+	for i := range data {
+		data[i] ^= key[i%blake2b.Size256]
+	}
+	return data, true
+}
+
 type SalamanderPacketConn struct {
 	net.PacketConn
 	password []byte
