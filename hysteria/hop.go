@@ -71,7 +71,7 @@ func NewHopConn(
 	if err != nil {
 		return nil, err
 	}
-	if destination.IsFqdn() {
+	if destination.IsDomain() {
 		remoteAddr := M.SocksaddrFromNet(currentConn.RemoteAddr()).Unwrap()
 		if remoteAddr.IsIP() {
 			if remoteAddr.Port != nextAddr.Port {
