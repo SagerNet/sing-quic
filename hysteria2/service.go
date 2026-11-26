@@ -68,7 +68,9 @@ type Service[U comparable] struct {
 	geckoMaxPacketSize    int
 	tlsConfig             aTLS.ServerConfig
 	quicConfig            *quic.Config
+	usersMu               sync.RWMutex
 	userMap               map[string]U
+	sessions              map[*serverSession[U]]string
 	udpDisabled           bool
 	udpTimeout            time.Duration
 	handler               ServerHandler
@@ -138,7 +140,7 @@ func NewService[U comparable](options ServiceOptions) (*Service[U], error) {
 		geckoMaxPacketSize:    options.GeckoMaxPacketSize,
 		tlsConfig:             options.TLSConfig,
 		quicConfig:            quicConfig,
-		userMap:               make(map[string]U),
+		sessions:              make(map[*serverSession[U]]string),
 		udpDisabled:           options.UDPDisabled,
 		udpTimeout:            options.UDPTimeout,
 		handler:               options.Handler,
@@ -153,7 +155,40 @@ func (s *Service[U]) UpdateUsers(userList []U, passwordList []string) {
 	for i, user := range userList {
 		userMap[passwordList[i]] = user
 	}
+	// Invalidate bindings before closing the transports. A later refresh must
+	// never reauthorize a session whose credential or identity was removed.
+	s.usersMu.Lock()
 	s.userMap = userMap
+	revoked := s.detachSessionsLocked(func(previous U, password string) bool {
+		user, ok := userMap[password]
+		return !ok || user != previous
+	})
+	s.usersMu.Unlock()
+	for _, session := range revoked {
+		session.close()
+	}
+}
+
+// CloseUserSessions disconnects existing sessions. An authorized user can log in again.
+func (s *Service[U]) CloseUserSessions(user U) {
+	s.usersMu.Lock()
+	revoked := s.detachSessionsLocked(func(previous U, _ string) bool { return previous == user })
+	s.usersMu.Unlock()
+	for _, session := range revoked {
+		session.close()
+	}
+}
+
+func (s *Service[U]) detachSessionsLocked(matches func(U, string) bool) []*serverSession[U] {
+	var revoked []*serverSession[U]
+	for session, password := range s.sessions {
+		if matches(session.authUser, password) {
+			session.closed = true
+			delete(s.sessions, session)
+			revoked = append(revoked, session)
+		}
+	}
+	return revoked
 }
 
 func (s *Service[U]) Start(conn net.PacketConn) error {
@@ -219,37 +254,72 @@ func (s *Service[U]) loopConnections(listener qtls.Listener) {
 }
 
 func (s *Service[U]) handleConnection(connection *quic.Conn) {
+	ctx, cancel := context.WithCancel(s.ctx)
 	session := &serverSession[U]{
 		Service:    s,
-		ctx:        s.ctx,
+		ctx:        ctx,
+		cancel:     cancel,
 		quicConn:   connection,
-		connDone:   make(chan struct{}),
 		udpConnMap: make(map[uint32]*udpPacketConn),
 	}
+	stop := context.AfterFunc(s.ctx, session.close)
+	defer stop()
+	defer session.close()
 	httpServer := http3.Server{
 		Handler:          session,
 		StreamDispatcher: session.dispatchStream,
 	}
 	_ = httpServer.ServeQUICConn(connection)
-	_ = connection.CloseWithError(0, "")
 }
 
 type serverSession[U comparable] struct {
 	*Service[U]
-	ctx           context.Context
-	quicConn      *quic.Conn
-	connAccess    sync.Mutex
-	connDone      chan struct{}
-	connErr       error
-	authenticated bool
-	authUser      U
-	udpAccess     sync.RWMutex
-	udpConnMap    map[uint32]*udpPacketConn
+	ctx        context.Context
+	quicConn   *quic.Conn
+	cancel     context.CancelFunc
+	closeOnce  sync.Once
+	closed     bool // protected by usersMu
+	authUser   U    // immutable after registration under usersMu
+	udpAccess  sync.RWMutex
+	udpConnMap map[uint32]*udpPacketConn
+}
+
+// authorize makes credential lookup and session registration atomic with UpdateUsers.
+func (s *serverSession[U]) authorize(password string, allowNew bool) (ok, first bool) {
+	s.usersMu.Lock()
+	defer s.usersMu.Unlock()
+	if s.closed || s.ctx.Err() != nil {
+		return false, false
+	}
+	if _, active := s.sessions[s]; active {
+		return true, false
+	}
+	user, valid := s.userMap[password]
+	if !valid || !allowNew {
+		return false, false
+	}
+	s.authUser = user
+	s.sessions[s] = password
+	return true, true
+}
+
+func (s *serverSession[U]) active() bool {
+	s.usersMu.RLock()
+	defer s.usersMu.RUnlock()
+	_, ok := s.sessions[s]
+	return ok
 }
 
 func (s *serverSession[U]) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodPost && r.Host == protocol.URLHost && r.URL.Path == protocol.URLPath {
-		if s.authenticated {
+		request := protocol.AuthRequestFromHeader(r.Header)
+		allowNew := !(s.receiveBPS > 0 && s.ignoreClientBandwidth && request.Rx == 0)
+		ok, first := s.authorize(request.Auth, allowNew)
+		if !ok {
+			s.masqueradeHandler.ServeHTTP(w, r)
+			return
+		}
+		if !first {
 			protocol.AuthResponseToHeader(w.Header(), protocol.AuthResponse{
 				UDPEnabled: !s.udpDisabled,
 				Rx:         s.receiveBPS,
@@ -258,20 +328,8 @@ func (s *serverSession[U]) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(protocol.StatusAuthOK)
 			return
 		}
-		request := protocol.AuthRequestFromHeader(r.Header)
-		user, loaded := s.userMap[request.Auth]
-		if !loaded {
-			s.masqueradeHandler.ServeHTTP(w, r)
-			return
-		}
-		s.authUser = user
-		s.authenticated = true
 		var rxAuto bool
-		if s.receiveBPS > 0 && s.ignoreClientBandwidth && request.Rx == 0 {
-			s.logger.Debug("process connection from ", r.RemoteAddr, ": BBR disabled by server")
-			s.masqueradeHandler.ServeHTTP(w, r)
-			return
-		} else if !(s.receiveBPS == 0 && s.ignoreClientBandwidth) && request.Rx > 0 {
+		if !(s.receiveBPS == 0 && s.ignoreClientBandwidth) && request.Rx > 0 {
 			rx := request.Rx
 			if s.sendBPS > 0 && rx > s.sendBPS {
 				rx = s.sendBPS
@@ -290,15 +348,6 @@ func (s *serverSession[U]) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			RxAuto:     rxAuto,
 		})
 		w.WriteHeader(protocol.StatusAuthOK)
-		if s.ctx.Done() != nil {
-			go func() {
-				select {
-				case <-s.ctx.Done():
-					s.closeWithError(s.ctx.Err())
-				case <-s.connDone:
-				}
-			}()
-		}
 		if !s.udpDisabled {
 			go s.loopMessages()
 		}
@@ -308,10 +357,7 @@ func (s *serverSession[U]) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *serverSession[U]) dispatchStream(frameType http3.FrameType, stream *quic.Stream, err error) (bool, error) {
-	if !s.authenticated || err != nil {
-		return false, nil
-	}
-	if frameType != protocol.FrameTypeTCPRequest {
+	if err != nil || frameType != protocol.FrameTypeTCPRequest || !s.active() {
 		return false, nil
 	}
 	_, err = quicvarint.Read(quicvarint.NewReader(stream))
@@ -339,33 +385,42 @@ func (s *serverSession[U]) handleStream(stream *quic.Stream) error {
 	if len(destination.Fqdn) > 255 {
 		return E.New("fqdn too long")
 	}
+	if !s.active() {
+		return net.ErrClosed
+	}
 	s.handler.NewConnectionEx(auth.ContextWithUser(s.ctx, s.authUser), &serverConn{Stream: stream}, M.SocksaddrFromNet(s.quicConn.RemoteAddr()).Unwrap(), destination, nil)
 	return nil
 }
 
 func (s *serverSession[U]) closeWithError(err error) {
-	s.connAccess.Lock()
-	defer s.connAccess.Unlock()
-	select {
-	case <-s.connDone:
-		return
-	default:
-		s.connErr = err
-		close(s.connDone)
-	}
+	s.closeWithCause(err)
 	if E.IsClosedOrCanceled(err) {
 		s.logger.Debug(E.Cause(err, "connection failed"))
 	} else {
 		s.logger.Error(E.Cause(err, "connection failed"))
 	}
-	s.udpAccess.Lock()
-	udpConnMap := s.udpConnMap
-	s.udpConnMap = make(map[uint32]*udpPacketConn)
-	s.udpAccess.Unlock()
-	for _, udpConn := range udpConnMap {
-		udpConn.closeWithError(err)
-	}
-	_ = s.quicConn.CloseWithError(0, "")
+}
+
+func (s *serverSession[U]) close() {
+	s.closeWithCause(net.ErrClosed)
+}
+
+func (s *serverSession[U]) closeWithCause(err error) {
+	s.closeOnce.Do(func() {
+		s.usersMu.Lock()
+		s.closed = true
+		delete(s.sessions, s)
+		s.usersMu.Unlock()
+		s.cancel()
+		s.udpAccess.Lock()
+		udpConnMap := s.udpConnMap
+		s.udpConnMap = make(map[uint32]*udpPacketConn)
+		s.udpAccess.Unlock()
+		for _, udpConn := range udpConnMap {
+			udpConn.closeWithError(err)
+		}
+		_ = s.quicConn.CloseWithError(0, "")
+	})
 }
 
 type serverConn struct {
